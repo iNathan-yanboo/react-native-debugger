@@ -18,6 +18,9 @@ import * as RemoteDev from './remotedev'
 import { getRequiredModules } from './utils'
 import { toggleNetworkInspect } from './networkInspect'
 import { handleApolloClient } from './apollo'
+import { createAgentCapture } from './agentCapture'
+
+const agentCapture = createAgentCapture()
 
 /* eslint-disable no-underscore-dangle */
 self.__REMOTEDEV__ = RemoteDev
@@ -36,6 +39,7 @@ self.__REDUX_DEVTOOLS_EXTENSION_COMPOSE__ = composeWithDevTools
 
 const setupRNDebuggerBeforeImportScript = (message) => {
   self.__REACT_DEVTOOLS_PORT__ = message.reactDevToolsPort
+  agentCapture.configure(message.agentCapture)
   if (message.networkInspect) {
     self.__NETWORK_INSPECT__ = toggleNetworkInspect
   }
@@ -50,6 +54,7 @@ const setupRNDebugger = async (message) => {
 
   handleApolloClient()
   toggleNetworkInspect(message.networkInspect)
+  agentCapture.configure(message.agentCapture)
   const modules = await getRequiredModules(message.moduleSize)
   if (modules) {
     checkAvailableDevMenuMethods(modules)
@@ -87,6 +92,14 @@ const messageHandlers = {
     // pass to other listeners
     return true
   },
+  configureAgentCapture(message) {
+    agentCapture.configure(message.agentCapture)
+    postMessage({
+      agentCaptureConfigured: true,
+      sensitiveDataMode: message.agentCapture.sensitiveDataMode,
+    })
+    return false
+  },
   invokeDevMenuMethod({ name, args }) {
     invokeDevMenuMethodIfAvailable(name, args)
     return false
@@ -97,6 +110,7 @@ const messageHandlers = {
       clearInterval(window.__RND_INTERVAL__)
       window.__RND_INTERVAL__ = null
     }
+    agentCapture.stop()
     return false
   },
 }

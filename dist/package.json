@@ -1,7 +1,7 @@
 {
   "name": "react-native-debugger",
   "version": "0.14.0",
-  "productName": "React Native Debugger",
+  "productName": "React Native Debugger-mcp",
   "description": "The standalone app for React Native Debugger, with React DevTools / Redux DevTools",
   "main": "main.js",
   "repository": {

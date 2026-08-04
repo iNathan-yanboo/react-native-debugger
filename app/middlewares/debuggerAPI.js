@@ -10,6 +10,7 @@
 // Take from https://github.com/facebook/react-native/blob/master/local-cli/server/util/debugger.html
 
 import { getCurrentWindow } from '@electron/remote'
+import { ipcRenderer } from 'electron'
 import { bindActionCreators } from 'redux'
 import { checkPortStatus } from 'portscanner'
 import * as debuggerActions from '../actions/debugger'
@@ -28,12 +29,24 @@ let actions
 let host
 let port
 let socket
+let agentCaptureConfig = { enabled: false }
 
 const APOLLO_MESSAGE_PREFIX = 'ac-devtools:'
 
 const workerOnMessage = (message) => {
   const { data } = message
 
+  if (data && data.agentCaptureEvent) {
+    ipcRenderer.send('agent-bridge-event', data.event)
+    return false
+  }
+  if (data && data.agentCaptureConfigured) {
+    ipcRenderer.send('agent-bridge-mode-applied', {
+      sessionId: agentCaptureConfig.sessionId,
+      sensitiveDataMode: data.sensitiveDataMode,
+    })
+    return false
+  }
   if (data && data.message?.startsWith(APOLLO_MESSAGE_PREFIX)) {
     data.__FROM_DEBUGGER_WORKER__ = true
     postMessage(data, '*')
@@ -86,6 +99,12 @@ const shutdownJSRuntime = () => {
   }
   worker = null
   setDebuggerWorker(null, 'disconnected')
+  if (agentCaptureConfig.enabled) {
+    ipcRenderer.send('agent-bridge-session-end', {
+      sessionId: agentCaptureConfig.sessionId,
+    })
+    agentCaptureConfig = { enabled: false }
+  }
 }
 
 const isScriptBuildForAndroid = (url) => url && (url.indexOf('.android.bundle') > -1 || url.indexOf('platform=android') > -1)
@@ -152,6 +171,10 @@ const connectToDebuggerProxy = async () => {
     // Special message that asks for a new JS runtime
     if (object.method === 'prepareJSRuntime') {
       shutdownJSRuntime()
+      agentCaptureConfig = ipcRenderer.sendSync('agent-bridge-session-start', {
+        host,
+        port,
+      }) || { enabled: false }
       createJSRuntime()
       clearLogs()
       selectRNDebuggerWorkerContext(currentWindow)
@@ -163,6 +186,7 @@ const connectToDebuggerProxy = async () => {
       if (object.method === 'executeApplicationScript') {
         object.networkInspect = networkInspect.isEnabled()
         object.reactDevToolsPort = window.reactDevToolsPort
+        object.agentCapture = agentCaptureConfig
         if (isScriptBuildForAndroid(object.url)) {
           // Reserve React Inspector port for debug via USB on Android real device
           tryADBReverse(window.reactDevToolsPort).catch(() => {})
@@ -194,6 +218,25 @@ const connectToDebuggerProxy = async () => {
   }
   return ws
 }
+
+ipcRenderer.on('agent-bridge-apply-mode', (event, nextConfig) => {
+  if (!agentCaptureConfig.enabled || nextConfig.sessionId !== agentCaptureConfig.sessionId) return
+  agentCaptureConfig = {
+    ...agentCaptureConfig,
+    ...nextConfig,
+  }
+  if (worker) {
+    worker.postMessage({
+      method: 'configureAgentCapture',
+      agentCapture: agentCaptureConfig,
+    })
+  } else {
+    ipcRenderer.send('agent-bridge-mode-applied', {
+      sessionId: agentCaptureConfig.sessionId,
+      sensitiveDataMode: agentCaptureConfig.sensitiveDataMode,
+    })
+  }
+})
 
 const setDebuggerLoc = ({ host: packagerHost, port: packagerPort }) => {
   if (host === packagerHost && port === Number(packagerPort)) return

@@ -10,8 +10,14 @@ import { startListeningHandleURL, handleURL, parseUrl } from './url-handle'
 import { createMenuTemplate } from './menu'
 import { readConfig } from './config'
 import { sendSyncState } from './sync-state'
+import {
+  registerAgentBridgeIpc,
+  startAgentBridgeRuntime,
+  stopAgentBridgeRuntime,
+} from './agent-bridge/runtime'
 
 initialize()
+registerAgentBridgeIpc()
 
 // Uncomment if want to debug devtools backend
 // app.commandLine.appendSwitch('remote-debugging-port', '9222');
@@ -100,12 +106,16 @@ app.on('window-all-closed', () => {
 })
 
 if (process.platform === 'darwin') {
+  let quitting = false
   app.on('before-quit', async (event) => {
+    if (quitting) return
     event.preventDefault()
+    quitting = true
     BrowserWindow.getAllWindows().forEach((win) => {
       win.removeAllListeners('close')
       win.close()
     })
+    await stopAgentBridgeRuntime()
     process.exit()
   })
 }
@@ -114,6 +124,11 @@ app.on('ready', async () => {
   await installExtensions()
 
   const { config } = readConfig()
+  try {
+    await startAgentBridgeRuntime(config.agentBridge)
+  } catch (error) {
+    console.warn('[RNDebugger] Failed to start Agent Bridge:', error)
+  }
 
   let { defaultRNPackagerPorts } = config
   if (!Array.isArray(defaultRNPackagerPorts)) {
@@ -150,6 +165,10 @@ app.on('ready', async () => {
     })
     callback({ cancel: false, requestHeaders: details.requestHeaders })
   })
+})
+
+app.on('will-quit', () => {
+  stopAgentBridgeRuntime().catch(() => {})
 })
 
 // Pass all certificate errors in favor of Network Inspect feature

@@ -13,6 +13,7 @@ electron-packager dist/ \
   --platform linux \
   --arch x64 \
   --asar \
+  --extra-resource=agent-mcp \
   --extra-resource=dist/devtools-helper \
   --extra-resource=dist/node_modules/apollo-client-devtools/ac-devtools-ext-build \
   --prune \
@@ -20,8 +21,8 @@ electron-packager dist/ \
   --electron-version $(node -e "console.log(require('electron/package').version)") \
   --app-version $PACKAGE_VERSION
 
-electron-installer-debian --src release/React\ Native\ Debugger-linux-x64 --dest release/ --arch amd64 --config scripts/config.json
-electron-installer-redhat --src release/React\ Native\ Debugger-linux-x64 --dest release/ --arch amd64 --config scripts/config.json
+electron-installer-debian --src release/React\ Native\ Debugger-mcp-linux-x64 --dest release/ --arch amd64 --config scripts/config.json
+electron-installer-redhat --src release/React\ Native\ Debugger-mcp-linux-x64 --dest release/ --arch amd64 --config scripts/config.json
 
-cd release/React\ Native\ Debugger-linux-x64
+cd release/React\ Native\ Debugger-mcp-linux-x64
 zip -ryq9 ../rn-debugger-linux-x64.zip *

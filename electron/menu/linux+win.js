@@ -21,6 +21,7 @@ import {
 } from './dialog'
 import { openConfigFile } from '../config'
 import { toggleSyncState, isSyncState } from '../sync-state'
+import { requestRawSensitiveDataForWindow } from '../agent-bridge/runtime'
 
 const getWin = () => BrowserWindow.getFocusedWindow()
 const viewItems = process.env.NODE_ENV === 'developemnt'
@@ -49,6 +50,17 @@ export default ({ iconPath }) => [
         type: 'checkbox',
         checked: isSyncState(),
       }),
+      item(
+        'Allow Agent Raw Sensitive Data',
+        n,
+        ({ checked }) => requestRawSensitiveDataForWindow(getWin(), checked),
+        {
+          id: 'agent-sensitive-data',
+          type: 'checkbox',
+          checked: false,
+          enabled: false,
+        },
+      ),
       item('Open Config File', n, () => openConfigFile()),
       separator,
       item('Close', 'Ctrl+W', () => close(getWin())),

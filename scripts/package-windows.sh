@@ -13,6 +13,7 @@ electron-packager dist/ \
   --platform win32 \
   --arch x64 \
   --asar \
+  --extra-resource=agent-mcp \
   --extra-resource=dist/devtools-helper \
   --extra-resource=dist/node_modules/apollo-client-devtools/ac-devtools-ext-build \
   --prune \
@@ -21,7 +22,7 @@ electron-packager dist/ \
   --app-version $PACKAGE_VERSION \
   --icon electron/logo.ico
 
-electron-installer-windows --src release/React\ Native\ Debugger-win32-x64 --dest release/ --config scripts/config.json
+electron-installer-windows --src release/React\ Native\ Debugger-mcp-win32-x64 --dest release/ --config scripts/config.json
 
-cd release/React\ Native\ Debugger-win32-x64
+cd release/React\ Native\ Debugger-mcp-win32-x64
 npx bestzip ../rn-debugger-windows-x64.zip *

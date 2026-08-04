@@ -10,6 +10,7 @@ import { getActiveInstance } from '@redux-devtools/app/lib/esm/reducers/instance
 
 import { SET_DEBUGGER_WORKER, SYNC_STATE } from '../actions/debugger'
 import { setReduxDevToolsMethods, updateSliderContent } from '../utils/devMenu'
+import config from '../utils/config'
 
 const unboundActions = {
   showNotification,
@@ -67,6 +68,9 @@ const messaging = (message) => {
   if (!data || !data.__IS_REDUX_NATIVE_MESSAGE__) return
 
   const { content: request } = data
+  if (config.agentBridgeEnabled) {
+    ipcRenderer.send('agent-bridge-redux-event', request)
+  }
   if (request.type === 'ERROR') {
     actions.showNotification(request.payload)
     return

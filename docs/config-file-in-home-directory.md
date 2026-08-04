@@ -49,6 +49,24 @@ We could configure RNDebugger app in `~/.rndebuggerrc` (the config can be opened
   // See https://github.com/jhen0409/react-native-debugger/blob/master/docs/network-inspect-of-chrome-devtools.md
   defaultNetworkInspect: false,
 
+  // Expose read-only console, Redux, and Network Inspect data to local agents.
+  // The bridge listens on 127.0.0.1 with a per-launch bearer token.
+  agentBridge: {
+    enabled: false,
+    maxConsoleEvents: 2000,
+    maxReduxActions: 1000,
+    maxNetworkRequests: 500,
+    maxEvents: 4000,
+    maxBodyBytes: 262144,
+
+    // Disconnected sessions are moved to a user-private disk archive and
+    // removed from the Electron main-process heap.
+    persistHistory: true,
+    maxHistoricalSessions: 2,
+    maxHistoryDiskBytes: 268435456,
+    historyTtlMinutes: 1440,
+  },
+
   // Refresh devtools when doing JS reload every N times. (-1 for disabled)
   // This can effectively avoid possible memory leaks (Like
   // https://github.com/jhen0409/react-native-debugger/issues/405) in devtools.
@@ -66,5 +84,6 @@ We could configure RNDebugger app in `~/.rndebuggerrc` (the config can be opened
 - [Shortcut references](shortcut-references.md)
 - [Network inspect of Chrome Developer Tools](network-inspect-of-chrome-devtools.md)
 - [Enable open in editor in console](enable-open-in-editor-in-console.md)
+- [Agent Bridge](agent-bridge.md)
 - [Troubleshooting](troubleshooting.md)
 - [Contributing](contributing.md)

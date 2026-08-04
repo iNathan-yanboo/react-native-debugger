@@ -17,6 +17,7 @@ import {
 import { haveOpenedWindow, showAboutDialog } from './dialog'
 import { openConfigFile } from '../config'
 import { isSyncState, toggleSyncState } from '../sync-state'
+import { requestRawSensitiveDataForWindow } from '../agent-bridge/runtime'
 
 const getWin = () => BrowserWindow.getFocusedWindow()
 
@@ -47,6 +48,17 @@ export default ({ iconPath }) => [
         type: 'checkbox',
         checked: isSyncState(),
       }),
+      item(
+        'Allow Agent Raw Sensitive Data',
+        n,
+        ({ checked }) => requestRawSensitiveDataForWindow(getWin(), checked),
+        {
+          id: 'agent-sensitive-data',
+          type: 'checkbox',
+          checked: false,
+          enabled: false,
+        },
+      ),
       item('Open Config File', n, () => openConfigFile()),
       separator,
       item('Minimize', 'Command+M', n, { selector: 'performMiniaturize:' }),

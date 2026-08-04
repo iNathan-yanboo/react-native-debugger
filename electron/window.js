@@ -9,6 +9,10 @@ import { catchConsoleLogLink, removeUnecessaryTabs, activeTabs } from './devtool
 import { selectRNDebuggerWorkerContext } from '../app/utils/devtools'
 import { readConfig, filePath as configFile } from './config'
 import { registerContextMenu } from './context-menu'
+import {
+  endAgentBridgeSession,
+  syncAgentBridgeMenu,
+} from './agent-bridge/runtime'
 
 const store = new Store()
 
@@ -57,6 +61,7 @@ const unregisterKeyboradShortcut = () => globalShortcut.unregisterAll()
 
 const registerShortcuts = async (win) => {
   registerKeyboradShortcut(win)
+  syncAgentBridgeMenu(win)
   changeMenuItems({
     Debugger: {
       'Stay in Front': {
@@ -107,6 +112,8 @@ export const createWindow = ({ iconPath, isPortSettingRequired, port }) => {
     },
     ...config.windowBounds,
   })
+  const webContentsId = win.webContents.id
+  win.on('closed', () => endAgentBridgeSession(webContentsId))
   enable(win.webContents)
 
   const isFirstWindow = BrowserWindow.getAllWindows().length === 1
@@ -121,6 +128,7 @@ export const createWindow = ({ iconPath, isPortSettingRequired, port }) => {
     networkInspect: config.defaultNetworkInspect && 1,
     isPortSettingRequired: isPortSettingRequired && 1,
     timesJSLoadToRefreshDevTools,
+    agentBridgeEnabled: !!(config.agentBridge && config.agentBridge.enabled),
   }
   win.loadURL(`file://${path.resolve(__dirname)}/app.html`)
   let unregisterContextMenu

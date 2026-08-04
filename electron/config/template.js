@@ -45,6 +45,25 @@ module.exports = `{
   // See https://github.com/jhen0409/react-native-debugger/blob/master/docs/network-inspect-of-chrome-devtools.md
   defaultNetworkInspect: false,
 
+  // Expose read-only console, Redux, and Network Inspect data to local agents.
+  // Sensitive values are redacted unless raw mode is explicitly enabled for
+  // the current session from the Debugger menu.
+  agentBridge: {
+    enabled: false,
+    maxConsoleEvents: 2000,
+    maxReduxActions: 1000,
+    maxNetworkRequests: 500,
+    maxEvents: 4000,
+    maxBodyBytes: 262144,
+
+    // Disconnected sessions are moved out of the Electron heap. History is
+    // stored only for the current OS user and is removed by these limits.
+    persistHistory: true,
+    maxHistoricalSessions: 2,
+    maxHistoryDiskBytes: 268435456,
+    historyTtlMinutes: 1440,
+  },
+
   // Refresh devtools when doing JS reload every N times. (-1 for disabled)
   // This can effectively avoid possible memory leaks (Like
   // https://github.com/jhen0409/react-native-debugger/issues/405) in devtools.

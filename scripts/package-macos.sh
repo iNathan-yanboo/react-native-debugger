@@ -30,6 +30,7 @@ function build_with_arch() {
     --platform darwin \
     --arch $1 \
     --asar \
+    --extra-resource=agent-mcp \
     --extra-resource=dist/devtools-helper \
     --extra-resource=dist/node_modules/apollo-client-devtools/ac-devtools-ext-build \
     --prune \
@@ -38,6 +39,7 @@ function build_with_arch() {
     --protocol "rndebugger" \
     --electron-version $(node -e "console.log(require('electron/package').version)") \
     --app-version $PACKAGE_VERSION \
+    --app-bundle-id "com.electron.react-native-debugger" \
     --icon electron/logo.icns \
     --darwin-dark-mode-support
 }
@@ -54,14 +56,14 @@ fi
 node scripts/mac/createDMG.js
 
 cd release
-ditto -c -k --keepParent React\ Native\ Debugger.app rn-debugger-macos-universal.zip
-cd React\ Native\ Debugger-darwin-arm64
-ditto -c -k --keepParent React\ Native\ Debugger.app ../rn-debugger-macos-arm64.zip 
-cd ../React\ Native\ Debugger-darwin-x64
-ditto -c -k --keepParent React\ Native\ Debugger.app ../rn-debugger-macos-x64.zip
+ditto -c -k --keepParent React\ Native\ Debugger-mcp.app rn-debugger-macos-universal.zip
+cd React\ Native\ Debugger-mcp-darwin-arm64
+ditto -c -k --keepParent React\ Native\ Debugger-mcp.app ../rn-debugger-macos-arm64.zip
+cd ../React\ Native\ Debugger-mcp-darwin-x64
+ditto -c -k --keepParent React\ Native\ Debugger-mcp.app ../rn-debugger-macos-x64.zip
 cd ..
 
 # Print codesign information
-codesign -dv --verbose=4 React\ Native\ Debugger.app
+codesign -dv --verbose=4 React\ Native\ Debugger-mcp.app
 
 echo sha256: `shasum -a 256 rn-debugger-macos-universal.zip`

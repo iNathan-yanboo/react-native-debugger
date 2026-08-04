@@ -11,15 +11,15 @@ const developerId = `${process.env.APPLE_DEVELOPER_NAME} (${process.env.APPLE_TE
 async function run() {
   const appPath = path.join(
     __dirname,
-    '../../release/React Native Debugger.app',
+    '../../release/React Native Debugger-mcp.app',
   )
   const x64AppPath = path.join(
     __dirname,
-    '../../release/React Native Debugger-darwin-x64/React Native Debugger.app',
+    '../../release/React Native Debugger-mcp-darwin-x64/React Native Debugger-mcp.app',
   )
   const arm64AppPath = path.join(
     __dirname,
-    '../../release/React Native Debugger-darwin-arm64/React Native Debugger.app',
+    '../../release/React Native Debugger-mcp-darwin-arm64/React Native Debugger-mcp.app',
   )
   await makeUniversalApp({
     force: true,

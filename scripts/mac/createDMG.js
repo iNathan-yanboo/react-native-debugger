@@ -2,13 +2,13 @@ const path = require('path')
 const createDMG = require('electron-installer-dmg')
 const pkg = require('../../package.json')
 
-const appPath = path.join(__dirname, '../../release/React Native Debugger.app')
+const appPath = path.join(__dirname, '../../release/React Native Debugger-mcp.app')
 
 createDMG(
   {
     appPath,
-    name: 'React Native Debugger',
-    title: 'React Native Debugger',
+    name: 'React Native Debugger-mcp',
+    title: 'React Native Debugger-mcp',
     // https://github.com/sindresorhus/create-dmg/tree/master/assets
     background: path.join(__dirname, 'dmg-background.png'),
     icon: path.join(__dirname, '../../electron/logo.icns'),

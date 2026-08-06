@@ -30,6 +30,7 @@ let host
 let port
 let socket
 let agentCaptureConfig = { enabled: false }
+let networkMockConfig = { enabled: false, rules: [] }
 
 const APOLLO_MESSAGE_PREFIX = 'ac-devtools:'
 
@@ -175,6 +176,7 @@ const connectToDebuggerProxy = async () => {
         host,
         port,
       }) || { enabled: false }
+      networkMockConfig = ipcRenderer.sendSync('network-mock-session-config') || networkMockConfig
       createJSRuntime()
       clearLogs()
       selectRNDebuggerWorkerContext(currentWindow)
@@ -185,6 +187,7 @@ const connectToDebuggerProxy = async () => {
       if (!worker) return
       if (object.method === 'executeApplicationScript') {
         object.networkInspect = networkInspect.isEnabled()
+        object.networkMock = networkMockConfig
         object.reactDevToolsPort = window.reactDevToolsPort
         object.agentCapture = agentCaptureConfig
         if (isScriptBuildForAndroid(object.url)) {
@@ -236,6 +239,11 @@ ipcRenderer.on('agent-bridge-apply-mode', (event, nextConfig) => {
       sensitiveDataMode: agentCaptureConfig.sensitiveDataMode,
     })
   }
+})
+
+ipcRenderer.on('network-mock-apply', (event, nextConfig) => {
+  networkMockConfig = nextConfig || { enabled: false, rules: [] }
+  if (worker) worker.postMessage({ method: 'configureNetworkMock', networkMock: networkMockConfig })
 })
 
 const setDebuggerLoc = ({ host: packagerHost, port: packagerPort }) => {

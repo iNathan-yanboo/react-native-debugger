@@ -1,6 +1,6 @@
 import { ipcMain } from 'electron'
 import contextMenu from 'electron-context-menu'
-import { readConfig } from './config'
+import Store from 'electron-store'
 import {
   toggleDevTools, n, item, separator,
 } from './menu/common'
@@ -10,14 +10,20 @@ const invokeDevMethod = (win, name) => win.webContents.executeJavaScript(
 )
 
 export const registerContextMenu = (win) => {
-  const { config } = readConfig()
+  const store = new Store()
   const defaultContextMenuItems = [
     item('Toggle Developer Tools', n, () => toggleDevTools(win, 'chrome')),
     item('Toggle React DevTools', n, () => toggleDevTools(win, 'react')),
     item('Toggle Redux DevTools', n, () => toggleDevTools(win, 'redux')),
   ]
-  let networkInspectEnabled = !!config.networkInspect
+  let networkInspectEnabled = !!win.debuggerConfig.networkInspect
   let availableMethods = []
+  const toggleNetworkInspect = () => {
+    if (!availableMethods.includes('networkInspect')) return
+    networkInspectEnabled = !networkInspectEnabled
+    store.set('networkInspect', networkInspectEnabled)
+    invokeDevMethod(win, 'networkInspect')
+  }
   contextMenu({
     window: win,
     showInspectElement: process.env.NODE_ENV === 'development',
@@ -33,7 +39,7 @@ export const registerContextMenu = (win) => {
           ? 'Disable Network Inspect'
           : 'Enable Network Inspect',
         n,
-        () => invokeDevMethod(win, 'networkInspect'),
+        toggleNetworkInspect,
       ),
       availableMethods.includes('showAsyncStorage')
           && item('Log AsyncStorage content', n, () => invokeDevMethod(win, 'showAsyncStorage')),
@@ -52,8 +58,15 @@ export const registerContextMenu = (win) => {
       : networkInspectEnabled
   }
 
+  const networkInspectListener = (event, enabled) => {
+    if (event.sender !== win.webContents || typeof enabled !== 'boolean') return
+    store.set('networkInspect', enabled)
+  }
+
   ipcMain.on(`context-menu-available-methods-update-${win.id}`, listener)
+  ipcMain.on('network-inspect-set-enabled', networkInspectListener)
   return () => {
     ipcMain.off(`context-menu-available-methods-update-${win.id}`, listener)
+    ipcMain.off('network-inspect-set-enabled', networkInspectListener)
   }
 }

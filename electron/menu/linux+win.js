@@ -22,6 +22,7 @@ import {
 import { openConfigFile } from '../config'
 import { toggleSyncState, isSyncState } from '../sync-state'
 import { requestRawSensitiveDataForWindow } from '../agent-bridge/runtime'
+import { openNetworkMockManager } from '../network-mock-manager'
 
 const getWin = () => BrowserWindow.getFocusedWindow()
 const viewItems = process.env.NODE_ENV === 'developemnt'
@@ -62,6 +63,7 @@ export default ({ iconPath }) => [
         },
       ),
       item('Open Config File', n, () => openConfigFile()),
+      item('Manage Network Mocks', n, () => openNetworkMockManager(getWin())),
       separator,
       item('Close', 'Ctrl+W', () => close(getWin())),
     ],

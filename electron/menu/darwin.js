@@ -18,6 +18,7 @@ import { haveOpenedWindow, showAboutDialog } from './dialog'
 import { openConfigFile } from '../config'
 import { isSyncState, toggleSyncState } from '../sync-state'
 import { requestRawSensitiveDataForWindow } from '../agent-bridge/runtime'
+import { openNetworkMockManager } from '../network-mock-manager'
 
 const getWin = () => BrowserWindow.getFocusedWindow()
 
@@ -60,6 +61,7 @@ export default ({ iconPath }) => [
         },
       ),
       item('Open Config File', n, () => openConfigFile()),
+      item('Manage Network Mocks', n, () => openNetworkMockManager(getWin())),
       separator,
       item('Minimize', 'Command+M', n, { selector: 'performMiniaturize:' }),
       item('Close', 'Command+W', n, { selector: 'performClose:' }),

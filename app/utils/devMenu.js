@@ -44,6 +44,7 @@ export const networkInspect = {
   getHighlightColor: () => (networkInspectEnabled ? '#7A7A7A' : '#363636'),
   toggle() {
     networkInspectEnabled = !networkInspectEnabled
+    ipcRenderer.send('network-inspect-set-enabled', networkInspectEnabled)
     sendContextMenuUpdate()
   },
 }

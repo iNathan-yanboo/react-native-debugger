@@ -19,8 +19,20 @@ import { getRequiredModules } from './utils'
 import { toggleNetworkInspect } from './networkInspect'
 import { handleApolloClient } from './apollo'
 import { createAgentCapture } from './agentCapture'
+import { createNetworkMock } from './networkMock'
 
 const agentCapture = createAgentCapture()
+const networkMock = createNetworkMock()
+let networkInspectRequested = false
+let agentCaptureConfig = { enabled: false }
+
+const configureNetworkMock = (config) => {
+  const enabled = !!(config && config.enabled)
+  toggleNetworkInspect(enabled || networkInspectRequested)
+  networkMock.configure(config)
+  // Rebind capture when a live mock update replaces XMLHttpRequest.
+  agentCapture.configure(agentCaptureConfig)
+}
 
 /* eslint-disable no-underscore-dangle */
 self.__REMOTEDEV__ = RemoteDev
@@ -39,7 +51,10 @@ self.__REDUX_DEVTOOLS_EXTENSION_COMPOSE__ = composeWithDevTools
 
 const setupRNDebuggerBeforeImportScript = (message) => {
   self.__REACT_DEVTOOLS_PORT__ = message.reactDevToolsPort
-  agentCapture.configure(message.agentCapture)
+  networkInspectRequested = !!message.networkInspect
+  configureNetworkMock(message.networkMock)
+  agentCaptureConfig = message.agentCapture || { enabled: false }
+  agentCapture.configure(agentCaptureConfig)
   if (message.networkInspect) {
     self.__NETWORK_INSPECT__ = toggleNetworkInspect
   }
@@ -53,8 +68,10 @@ const setupRNDebugger = async (message) => {
   self.__RND_INTERVAL__ = setInterval(noop, 100); // eslint-disable-line
 
   handleApolloClient()
-  toggleNetworkInspect(message.networkInspect)
-  agentCapture.configure(message.agentCapture)
+  networkInspectRequested = !!message.networkInspect
+  configureNetworkMock(message.networkMock)
+  agentCaptureConfig = message.agentCapture || { enabled: false }
+  agentCapture.configure(agentCaptureConfig)
   const modules = await getRequiredModules(message.moduleSize)
   if (modules) {
     checkAvailableDevMenuMethods(modules)
@@ -93,11 +110,16 @@ const messageHandlers = {
     return true
   },
   configureAgentCapture(message) {
-    agentCapture.configure(message.agentCapture)
+    agentCaptureConfig = message.agentCapture || { enabled: false }
+    agentCapture.configure(agentCaptureConfig)
     postMessage({
       agentCaptureConfigured: true,
       sensitiveDataMode: message.agentCapture.sensitiveDataMode,
     })
+    return false
+  },
+  configureNetworkMock(message) {
+    configureNetworkMock(message.networkMock)
     return false
   },
   invokeDevMenuMethod({ name, args }) {
@@ -111,6 +133,7 @@ const messageHandlers = {
       window.__RND_INTERVAL__ = null
     }
     agentCapture.stop()
+    networkMock.stop()
     return false
   },
 }

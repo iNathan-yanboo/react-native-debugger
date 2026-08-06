@@ -28,6 +28,19 @@ Remote JS Debugging。
 > 选择 **Debugger → Allow Agent Raw Sensitive Data**。每次新会话默认
 > 恢复脱敏模式。
 
+### 2.1 配置接口 Mock（可选）
+
+在 Chrome DevTools 的 **Network** 列表中选中目标请求并右键，选择
+**Mock selected Network request**。应用会自动带入完整 URL、方法、状态码、
+响应头和响应正文；可直接编辑后保存。
+
+也可从应用菜单打开 **Debugger → Manage Network Mocks**，集中新增、编辑、
+启用、禁用或删除规则。规则保存后会立即同步到当前 RN 会话，**不需要 Reload JS**。
+
+URL 为精确匹配（包含 query string），命中后不发送真实请求。启用 Mock 会自动
+开启 Network Inspect；启用 Agent Bridge 时，Mock 响应会带 `mocked: true` 标记，
+供 MCP 查询和排查。
+
 ### 3. 在 Codex 注册 MCP
 
 复制执行：

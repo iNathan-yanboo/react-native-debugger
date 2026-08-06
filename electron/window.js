@@ -10,6 +10,10 @@ import { selectRNDebuggerWorkerContext } from '../app/utils/devtools'
 import { readConfig, filePath as configFile } from './config'
 import { registerContextMenu } from './context-menu'
 import {
+  registerNetworkMockDevtoolsMenu,
+  unregisterNetworkMockDevtoolsMenu,
+} from './network-mock-devtools'
+import {
   endAgentBridgeSession,
   syncAgentBridgeMenu,
 } from './agent-bridge/runtime'
@@ -113,19 +117,26 @@ export const createWindow = ({ iconPath, isPortSettingRequired, port }) => {
     ...config.windowBounds,
   })
   const webContentsId = win.webContents.id
-  win.on('closed', () => endAgentBridgeSession(webContentsId))
+  win.on('closed', () => {
+    unregisterNetworkMockDevtoolsMenu(win)
+    endAgentBridgeSession(webContentsId)
+  })
   enable(win.webContents)
 
   const isFirstWindow = BrowserWindow.getAllWindows().length === 1
 
   const { timesJSLoadToRefreshDevTools = -1 } = config
+  const persistedNetworkInspect = store.get('networkInspect')
+  const networkInspect = typeof persistedNetworkInspect === 'boolean'
+    ? persistedNetworkInspect
+    : !!config.defaultNetworkInspect
   win.debuggerConfig = {
     port,
     editor: config.editor,
     fontFamily: config.fontFamily,
     defaultReactDevToolsTheme: config.defaultReactDevToolsTheme,
     defaultReactDevToolsPort: config.defaultReactDevToolsPort,
-    networkInspect: config.defaultNetworkInspect && 1,
+    networkInspect,
     isPortSettingRequired: isPortSettingRequired && 1,
     timesJSLoadToRefreshDevTools,
     agentBridgeEnabled: !!(config.agentBridge && config.agentBridge.enabled),
@@ -151,6 +162,7 @@ export const createWindow = ({ iconPath, isPortSettingRequired, port }) => {
       removeUnecessaryTabs(win)
     }
     selectRNDebuggerWorkerContext(win)
+    registerNetworkMockDevtoolsMenu(win)
   })
   win.on('show', () => {
     if (!win.isFocused()) return

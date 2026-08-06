@@ -10,6 +10,7 @@ import { startListeningHandleURL, handleURL, parseUrl } from './url-handle'
 import { createMenuTemplate } from './menu'
 import { readConfig } from './config'
 import { sendSyncState } from './sync-state'
+import { registerNetworkMockIpc } from './network-mock-store'
 import {
   registerAgentBridgeIpc,
   startAgentBridgeRuntime,
@@ -18,6 +19,7 @@ import {
 
 initialize()
 registerAgentBridgeIpc()
+registerNetworkMockIpc()
 
 // Uncomment if want to debug devtools backend
 // app.commandLine.appendSwitch('remote-debugging-port', '9222');

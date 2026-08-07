@@ -68,6 +68,7 @@ export const createNetworkMock = ({ host = getDefaultHost() } = {}) => {
 
     const getState = (xhr) => states.get(xhr)
     const isMocked = (xhr) => getState(xhr).isMocked
+    const isMixedResponse = (xhr) => getState(xhr).mixedResponse
     const dispatch = (xhr, event) => {
       const state = getState(xhr)
       const { type } = event
@@ -75,6 +76,29 @@ export const createNetworkMock = ({ host = getDefaultHost() } = {}) => {
       const handler = state.handlers[type]
       if (typeof handler === 'function') handler(payload)
       ;(state.listeners[type] || []).forEach((listener) => listener(payload))
+    }
+    const completeMixedResponse = (xhr) => {
+      const state = getState(xhr)
+      const { rule } = state
+      state.status = state.native.status
+      state.statusText = state.native.statusText
+      state.responseURL = state.native.responseURL || state.url
+      if (rule.mockResponseHeadersEnabled) {
+        state.responseHeaderText = responseHeaders(normalizeHeaders(rule.headers))
+      }
+      if (rule.mockResponseBodyEnabled) {
+        state.responseText = normalizeBody(rule.body)
+        state.response = state.responseText
+      }
+      const delayMs = Number.isFinite(Number(rule.delayMs))
+        ? Math.max(0, Number(rule.delayMs))
+        : 0
+      state.timer = setTimeout(() => {
+        state.readyState = 4
+        dispatch(xhr, { type: 'readystatechange' })
+        dispatch(xhr, { type: 'load' })
+        dispatch(xhr, { type: 'loadend' })
+      }, delayMs)
     }
 
     function MockXMLHttpRequest() {
@@ -84,6 +108,7 @@ export const createNetworkMock = ({ host = getDefaultHost() } = {}) => {
         listeners: {},
         handlers: {},
         isMocked: false,
+        mixedResponse: false,
         method: 'GET',
         url: '',
         rule: null,
@@ -98,17 +123,26 @@ export const createNetworkMock = ({ host = getDefaultHost() } = {}) => {
         responseType: '',
         mockRequestHeadersApplied: false,
       })
+      const state = getState(xhr)
+      state.native.addEventListener('load', () => {
+        if (state.mixedResponse) completeMixedResponse(xhr)
+      })
+      ;['error', 'abort', 'timeout'].forEach((type) => {
+        state.native.addEventListener(type, () => {
+          if (state.mixedResponse) dispatch(xhr, { type })
+        })
+      })
       xhr.__RN_DEBUGGER_NETWORK_MOCK__ = false
       return xhr
     }
 
     Object.defineProperties(MockXMLHttpRequest.prototype, {
-      readyState: { get() { const state = getState(this); return isMocked(this) ? state.readyState : state.native.readyState } },
-      status: { get() { const state = getState(this); return isMocked(this) ? state.status : state.native.status } },
-      statusText: { get() { const state = getState(this); return isMocked(this) ? state.statusText : state.native.statusText } },
-      responseText: { get() { const state = getState(this); return isMocked(this) ? state.responseText : state.native.responseText } },
-      response: { get() { const state = getState(this); return isMocked(this) ? state.response : state.native.response } },
-      responseURL: { get() { const state = getState(this); return isMocked(this) ? state.responseURL : state.native.responseURL } },
+      readyState: { get() { const state = getState(this); return (isMocked(this) || isMixedResponse(this)) ? state.readyState : state.native.readyState } },
+      status: { get() { const state = getState(this); return (isMocked(this) || isMixedResponse(this)) ? state.status : state.native.status } },
+      statusText: { get() { const state = getState(this); return (isMocked(this) || isMixedResponse(this)) ? state.statusText : state.native.statusText } },
+      responseText: { get() { const state = getState(this); return isMocked(this) || (isMixedResponse(this) && state.rule.mockResponseBodyEnabled) ? state.responseText : state.native.responseText } },
+      response: { get() { const state = getState(this); return isMocked(this) || (isMixedResponse(this) && state.rule.mockResponseBodyEnabled) ? state.response : state.native.response } },
+      responseURL: { get() { const state = getState(this); return (isMocked(this) || isMixedResponse(this)) ? state.responseURL : state.native.responseURL } },
       responseType: {
         get() { const state = getState(this); return isMocked(this) ? state.responseType : state.native.responseType },
         set(value) { const state = getState(this); state.responseType = value; if (!isMocked(this)) state.native.responseType = value },
@@ -130,14 +164,14 @@ export const createNetworkMock = ({ host = getDefaultHost() } = {}) => {
         set(handler) {
           const state = getState(this)
           state.handlers[type] = handler
-          if (!state.isMocked) state.native[`on${type}`] = handler
+          if (!state.isMocked && !state.mixedResponse) state.native[`on${type}`] = handler
         },
       })
     })
 
     MockXMLHttpRequest.prototype.addEventListener = function addEventListener(type, listener) {
       const state = getState(this)
-      if (state.isMocked) {
+      if (state.isMocked || state.mixedResponse) {
         state.listeners[type] = state.listeners[type] || []
         state.listeners[type].push(listener)
       } else {
@@ -146,7 +180,7 @@ export const createNetworkMock = ({ host = getDefaultHost() } = {}) => {
     }
     MockXMLHttpRequest.prototype.removeEventListener = function removeEventListener(type, listener) {
       const state = getState(this)
-      if (state.isMocked) {
+      if (state.isMocked || state.mixedResponse) {
         state.listeners[type] = (state.listeners[type] || []).filter((item) => item !== listener)
       } else {
         state.native.removeEventListener(type, listener)
@@ -157,8 +191,9 @@ export const createNetworkMock = ({ host = getDefaultHost() } = {}) => {
       state.method = String(method || 'GET').toUpperCase()
       state.url = String(url)
       state.rule = findRule(rules, state.method, state.url)
-      state.isMocked = !!hasMockResponse(state.rule)
-      this.__RN_DEBUGGER_NETWORK_MOCK__ = state.isMocked
+      state.mixedResponse = !!(hasMockResponse(state.rule) && state.rule.mixedResponseEnabled)
+      state.isMocked = !!(hasMockResponse(state.rule) && !state.mixedResponse)
+      this.__RN_DEBUGGER_NETWORK_MOCK__ = state.isMocked || state.mixedResponse
       if (state.isMocked) {
         state.readyState = 1
         state.responseURL = state.url
@@ -176,11 +211,16 @@ export const createNetworkMock = ({ host = getDefaultHost() } = {}) => {
     }
     MockXMLHttpRequest.prototype.getAllResponseHeaders = function getAllResponseHeaders() {
       const state = getState(this)
-      return state.isMocked ? state.responseHeaderText : state.native.getAllResponseHeaders()
+      if (state.isMocked || (state.mixedResponse && state.rule.mockResponseHeadersEnabled)) {
+        return state.responseHeaderText
+      }
+      return state.native.getAllResponseHeaders()
     }
     MockXMLHttpRequest.prototype.getResponseHeader = function getResponseHeader(name) {
       const state = getState(this)
-      if (!state.isMocked) return state.native.getResponseHeader(name)
+      if (!state.isMocked && !(state.mixedResponse && state.rule.mockResponseHeadersEnabled)) {
+        return state.native.getResponseHeader(name)
+      }
       const headers = normalizeHeaders(state.rule.headers)
       const key = Object.keys(headers)
         .find((header) => header.toLowerCase() === String(name).toLowerCase())
@@ -216,7 +256,7 @@ export const createNetworkMock = ({ host = getDefaultHost() } = {}) => {
           state.mockRequestHeadersApplied = true
         }
         const body = rule && rule.mockRequestBodyEnabled ? rule.mockRequestBody : args[0]
-        if (!delayMs) return state.native.send(body)
+        if (state.mixedResponse || !delayMs) return state.native.send(body)
         state.timer = setTimeout(() => state.native.send(body), delayMs)
         return undefined
       }

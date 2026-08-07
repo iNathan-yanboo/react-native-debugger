@@ -26,6 +26,24 @@ const sendJson = (response, status, body) => {
   response.end(JSON.stringify(body))
 }
 
+const readJsonBody = (request) => new Promise((resolve, reject) => {
+  let size = 0
+  const chunks = []
+  request.on('data', (chunk) => {
+    size += chunk.length
+    if (size > 2 * 1024 * 1024) {
+      reject(new Error('request_body_too_large'))
+      request.destroy()
+      return
+    }
+    chunks.push(chunk)
+  })
+  request.on('end', () => {
+    try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')) } catch (error) { reject(error) }
+  })
+  request.on('error', reject)
+})
+
 const createToken = () => crypto.randomBytes(32).toString('base64url')
 
 const safeEqual = (left, right) => {
@@ -165,11 +183,7 @@ const waitForEvents = async (store, sessionId, {
   })
 }
 
-const handleRequest = (store, token) => async (request, response) => {
-  if (request.method !== 'GET') {
-    sendJson(response, 405, { error: 'method_not_allowed' })
-    return
-  }
+const handleRequest = (store, token, networkMocks) => async (request, response) => {
   if (!isAuthorized(request, token)) {
     sendJson(response, 401, { error: 'unauthorized' })
     return
@@ -187,6 +201,27 @@ const handleRequest = (store, token) => async (request, response) => {
   }
 
   try {
+    if (parts.length === 2 && parts[0] === 'v1' && parts[1] === 'network-mocks') {
+      if (!networkMocks) { sendJson(response, 404, { error: 'not_found' }); return }
+      if (request.method === 'GET') { sendJson(response, 200, { sensitiveDataMode: 'raw', rules: networkMocks.list() }); return }
+      if (request.method === 'POST') { sendJson(response, 200, { sensitiveDataMode: 'raw', rule: networkMocks.save(await readJsonBody(request)) }); return }
+      sendJson(response, 405, { error: 'method_not_allowed' }); return
+    }
+    if (parts.length === 4 && parts[0] === 'v1' && parts[1] === 'network-mocks' && parts[3] === 'enabled') {
+      if (!networkMocks) { sendJson(response, 404, { error: 'not_found' }); return }
+      if (request.method !== 'POST') { sendJson(response, 405, { error: 'method_not_allowed' }); return }
+      const body = await readJsonBody(request)
+      sendJson(response, 200, { sensitiveDataMode: 'raw', rule: networkMocks.setEnabled(parts[2], body.enabled) })
+      return
+    }
+    if (parts.length === 3 && parts[0] === 'v1' && parts[1] === 'network-mocks') {
+      if (!networkMocks) { sendJson(response, 404, { error: 'not_found' }); return }
+      if (request.method !== 'DELETE') { sendJson(response, 405, { error: 'method_not_allowed' }); return }
+      networkMocks.remove(parts[2])
+      sendJson(response, 200, { sensitiveDataMode: 'raw', id: parts[2], deleted: true })
+      return
+    }
+    if (request.method !== 'GET') { sendJson(response, 405, { error: 'method_not_allowed' }); return }
     if (parts.length === 2 && parts[0] === 'v1' && parts[1] === 'sessions') {
       const sessions = store.listSessions()
       sendJson(response, 200, projectSessions({
@@ -271,6 +306,7 @@ export const createAgentBridge = ({
   store = new AgentEventStore(),
   token = createToken(),
   serverFactory = http.createServer,
+  networkMocks = null,
 } = {}) => {
   let server
   let address
@@ -291,7 +327,7 @@ export const createAgentBridge = ({
     async start({ port = 0, host = LOOPBACK_HOST } = {}) {
       if (host !== LOOPBACK_HOST) throw new Error('Agent Bridge may only bind 127.0.0.1')
       if (server) return bridge.discovery
-      server = serverFactory(handleRequest(store, token))
+      server = serverFactory(handleRequest(store, token, networkMocks))
       try {
         await new Promise((resolve, reject) => {
           server.once('error', (error) => {

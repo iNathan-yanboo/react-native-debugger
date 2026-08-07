@@ -9,7 +9,7 @@ test('MCP server exposes tools and marks raw result as sensitive', async () => {
   const registry = createToolRegistry({ listDebugSessions: async () => ({ sessions: [], sensitiveDataMode: 'raw' }) });
   const server = createMcpServer({ registry, input: new (require('node:stream').PassThrough)(), output: new (require('node:stream').PassThrough)() });
   const listing = await server.dispatch({ jsonrpc: '2.0', id: 1, method: 'tools/list' });
-  assert.equal(listing.result.tools.length, 7);
+  assert.equal(listing.result.tools.length, 11);
   const response = await server.dispatch({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'list_debug_sessions', arguments: {} } });
   assert.equal(response.result.structuredContent.sensitiveDataMode, 'raw');
   assert.match(response.result.structuredContent.sensitiveDataWarning, /^RAW:/);
@@ -62,6 +62,10 @@ test('tool schemas expose token-efficient options to MCP clients', () => {
   assert.equal(byName.wait_for_debug_event.inputSchema.properties.maxResultBytes.default, 16384);
   assert.ok(byName.wait_for_debug_event.inputSchema.properties.eventTypes.items.enum.includes('redux_state'));
   assert.ok(byName.wait_for_debug_event.inputSchema.properties.path);
+  assert.ok(byName.list_network_mocks);
+  assert.equal(byName.save_network_mock.inputSchema.properties.urlMatchType.default, 'exact');
+  assert.ok(byName.set_network_mock_enabled);
+  assert.ok(byName.delete_network_mock);
 });
 
 test('MCP tool response carries a large payload only in structuredContent', async () => {

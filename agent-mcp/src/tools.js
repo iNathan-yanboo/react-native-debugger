@@ -21,6 +21,20 @@ const bodyPreviewBytesSchema = {
   maximum: 262144,
   description: 'Maximum bytes returned for each request or response body preview.',
 };
+const networkMockSchema = {
+  id: { type: 'string', description: 'Existing rule id. Omit to create a new rule.' },
+  url: { type: 'string', minLength: 1 },
+  urlMatchType: { type: 'string', enum: ['exact', 'regex'], default: 'exact' },
+  method: { type: 'string', enum: ['', 'GET', 'POST', 'PUT', 'PATCH', 'DELETE'] },
+  enabled: { type: 'boolean', default: true },
+  status: { type: 'integer', minimum: 0 },
+  delayMs: { type: 'integer', minimum: 0 },
+  mockRequestHeadersEnabled: { type: 'boolean' }, mockRequestHeaders: { type: 'object' },
+  mockRequestBodyEnabled: { type: 'boolean' }, mockRequestBody: {},
+  mockResponseHeadersEnabled: { type: 'boolean' }, headers: { type: 'object' },
+  mockResponseBodyEnabled: { type: 'boolean' }, body: {},
+  mixedResponseEnabled: { type: 'boolean', description: 'When true, send the real request then override enabled response fields.' },
+};
 
 function withDefaults(args, defaults) {
   return { ...defaults, ...args };
@@ -43,6 +57,10 @@ function createToolRegistry(client) {
     { name: 'get_network_requests', description: 'Read compact fetch/XMLHttpRequest summaries for one debug session. Headers and bodies are excluded unless explicitly requested.', inputSchema: { type: 'object', required: ['sessionId'], properties: { sessionId: sessionSchema, method: { type: 'string' }, url: { type: 'string' }, status: { type: 'integer' }, includeHeaders: { type: 'boolean', default: false }, includeBodies: { type: 'boolean', default: false }, bodyPreviewBytes: bodyPreviewBytesSchema, ...commonQuery } }, call: (args) => client.getNetworkRequests(withDefaults(args, { includeHeaders: false, includeBodies: false, limit: 20, maxResultBytes: 32768 })) },
     { name: 'get_network_request', description: 'Read one captured network request. Headers and bounded request/response body previews are included by default.', inputSchema: { type: 'object', required: ['sessionId', 'requestId'], properties: { sessionId: sessionSchema, requestId: { type: 'string', minLength: 1 }, includeHeaders: { type: 'boolean', default: true }, includeRequestBody: { type: 'boolean', default: true }, includeResponseBody: { type: 'boolean', default: true }, bodyPreviewBytes: { ...bodyPreviewBytesSchema, default: 8192 }, maxResultBytes: { ...commonQuery.maxResultBytes, default: 32768 } } }, call: (args) => client.getNetworkRequest(withDefaults(args, { includeHeaders: true, includeRequestBody: true, includeResponseBody: true, bodyPreviewBytes: 8192, maxResultBytes: 32768 })) },
     { name: 'wait_for_debug_event', description: 'Long-poll for the next compact, projected debug event. This is read-only and times out after at most 30 seconds.', inputSchema: { type: 'object', required: ['sessionId'], properties: { sessionId: sessionSchema, eventTypes: { type: 'array', items: { type: 'string', enum: ['console', 'redux_action', 'redux_state', 'network'] } }, timeoutMs: { type: 'integer', minimum: 1, maximum: 30000 }, after: { type: 'integer', minimum: 0 }, compact: { type: 'boolean', default: true }, includeState: { type: 'boolean', default: false }, path: { type: 'string', description: 'Optional JSON Pointer path used when includeState=true and a redux_state event is returned.' }, includeHeaders: { type: 'boolean', default: false }, includeBodies: { type: 'boolean', default: false }, maxValueBytes: { ...maxValueBytesSchema, default: 2048 }, bodyPreviewBytes: { ...bodyPreviewBytesSchema, default: 4096 }, maxResultBytes: { ...commonQuery.maxResultBytes, default: 16384 } } }, call: (args) => client.waitForDebugEvent(withDefaults(args, { compact: true, includeState: false, includeHeaders: false, includeBodies: false, maxValueBytes: 2048, bodyPreviewBytes: 4096, maxResultBytes: 16384 })) },
+    { name: 'list_network_mocks', description: 'List globally configured Network Mock rules. Returned rule data can contain sensitive request/response values.', inputSchema: { type: 'object', properties: {} }, call: (args) => client.listNetworkMocks(args) },
+    { name: 'save_network_mock', description: 'Create or update a Network Mock rule. This changes the active debugging behavior immediately.', inputSchema: { type: 'object', required: ['url'], properties: networkMockSchema }, call: (args) => client.saveNetworkMock(args) },
+    { name: 'set_network_mock_enabled', description: 'Enable or disable one Network Mock rule immediately.', inputSchema: { type: 'object', required: ['id', 'enabled'], properties: { id: { type: 'string', minLength: 1 }, enabled: { type: 'boolean' } } }, call: (args) => client.setNetworkMockEnabled(args) },
+    { name: 'delete_network_mock', description: 'Permanently delete one Network Mock rule.', inputSchema: { type: 'object', required: ['id'], properties: { id: { type: 'string', minLength: 1 } } }, call: (args) => client.removeNetworkMock(args) },
   ];
 
   const byName = new Map(definitions.map((definition) => [definition.name, definition]));

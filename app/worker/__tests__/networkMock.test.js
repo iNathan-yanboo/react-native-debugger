@@ -136,6 +136,33 @@ describe('networkMock', () => {
     expect(FakeXMLHttpRequest.lastInstance.requestBody).toBe('{"source":"mock"}')
   })
 
+  it('can pass through a real response and replace only enabled response fields', (done) => {
+    const host = { XMLHttpRequest: FakeXMLHttpRequest }
+    const mock = createNetworkMock({ host })
+    mock.configure({
+      enabled: true,
+      rules: [{
+        url: 'https://example.test/live',
+        mixedResponseEnabled: true,
+        mockResponseHeadersEnabled: true,
+        mockResponseBodyEnabled: false,
+        headers: { 'x-mock-source': 'mixed' },
+      }],
+    })
+
+    const xhr = new host.XMLHttpRequest()
+    xhr.open('GET', 'https://example.test/live')
+    xhr.addEventListener('loadend', () => {
+      expect(xhr.__RN_DEBUGGER_NETWORK_MOCK__).toBe(true)
+      expect(FakeXMLHttpRequest.lastInstance.requestBody).toBeUndefined()
+      expect(xhr.status).toBe(204)
+      expect(xhr.responseText).toBe('')
+      expect(xhr.getResponseHeader('X-Mock-Source')).toBe('mixed')
+      done()
+    })
+    xhr.send()
+  })
+
   it('remains compatible with Agent network capture', async () => {
     const host = { XMLHttpRequest: FakeXMLHttpRequest }
     const events = []

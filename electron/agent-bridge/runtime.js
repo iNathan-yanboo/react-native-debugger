@@ -15,6 +15,12 @@ import {
 } from '.'
 import { DiskHistoryStore } from './history-store'
 import { redactValue } from './redaction'
+import {
+  listNetworkMocks,
+  removeNetworkMock,
+  saveNetworkMock,
+  setNetworkMockEnabled,
+} from '../network-mock-store'
 
 const DEFAULTS = {
   enabled: false,
@@ -239,7 +245,15 @@ export const startAgentBridgeRuntime = async (agentBridgeConfig = {}) => {
     },
     historyStore,
   })
-  bridge = createAgentBridge({ store })
+  bridge = createAgentBridge({
+    store,
+    networkMocks: {
+      list: listNetworkMocks,
+      save: saveNetworkMock,
+      setEnabled: setNetworkMockEnabled,
+      remove: removeNetworkMock,
+    },
+  })
   try {
     await bridge.start()
     bridge.publishDiscovery(discoveryPath)

@@ -7,6 +7,7 @@ const request = ({
   token,
   method = 'GET',
   origin,
+  body,
 }) => new Promise((resolve, reject) => {
   const clientRequest = http.request({
     host: '127.0.0.1',
@@ -16,14 +17,15 @@ const request = ({
     headers: {
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(origin ? { Origin: origin } : {}),
+      ...(body ? { 'Content-Type': 'application/json' } : {}),
     },
   }, (response) => {
-    let body = ''
-    response.on('data', (chunk) => { body += chunk })
-    response.on('end', () => resolve({ status: response.statusCode, body: JSON.parse(body) }))
+    let responseBody = ''
+    response.on('data', (chunk) => { responseBody += chunk })
+    response.on('end', () => resolve({ status: response.statusCode, body: JSON.parse(responseBody) }))
   })
   clientRequest.on('error', reject)
-  clientRequest.end()
+  clientRequest.end(body ? JSON.stringify(body) : undefined)
 })
 
 describe('Agent Bridge HTTP API', () => {
@@ -345,6 +347,59 @@ describe('Agent Bridge HTTP API', () => {
 
   test('rejects a non-loopback host before starting a server', async () => {
     await expect(bridge.start({ host: '0.0.0.0' })).rejects.toThrow('127.0.0.1')
+  })
+
+  test('manages Network Mock rules through the authenticated loopback API', async () => {
+    const rules = []
+    const mockBridge = createAgentBridge({
+      token: 'mock-token',
+      networkMocks: {
+        list: () => rules,
+        save: (draft) => {
+          const rule = { id: draft.id || 'rule-1', ...draft }
+          const index = rules.findIndex((item) => item.id === rule.id)
+          if (index === -1) rules.push(rule)
+          else rules[index] = rule
+          return rule
+        },
+        setEnabled: (id, enabled) => {
+          const rule = rules.find((item) => item.id === id)
+          rule.enabled = enabled
+          return rule
+        },
+        remove: (id) => {
+          rules.splice(rules.findIndex((item) => item.id === id), 1)
+        },
+      },
+    })
+    const discovery = await mockBridge.start()
+    const { port } = new URL(discovery.origin)
+    const saved = await request({
+      port,
+      token: mockBridge.token,
+      method: 'POST',
+      path: '/v1/network-mocks',
+      body: { url: 'https://example.test/mock', method: 'GET' },
+    })
+    expect(saved.body).toMatchObject({ sensitiveDataMode: 'raw', rule: { id: 'rule-1' } })
+    const listed = await request({ port, token: mockBridge.token, path: '/v1/network-mocks' })
+    expect(listed.body.rules).toHaveLength(1)
+    const disabled = await request({
+      port,
+      token: mockBridge.token,
+      method: 'POST',
+      path: '/v1/network-mocks/rule-1/enabled',
+      body: { enabled: false },
+    })
+    expect(disabled.body.rule.enabled).toBe(false)
+    const removed = await request({
+      port,
+      token: mockBridge.token,
+      method: 'DELETE',
+      path: '/v1/network-mocks/rule-1',
+    })
+    expect(removed.body).toMatchObject({ deleted: true, id: 'rule-1' })
+    await mockBridge.stop()
   })
 
   test('writes discovery through an injectable filesystem adapter', async () => {

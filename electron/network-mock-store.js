@@ -39,6 +39,7 @@ const normalizeRule = (value = {}, existing = {}) => ({
   // Existing rules were response mocks before response switches were added.
   mockResponseHeadersEnabled: value.mockResponseHeadersEnabled !== false,
   mockResponseBodyEnabled: value.mockResponseBodyEnabled !== false,
+  mixedResponseEnabled: value.mixedResponseEnabled === true,
   headers: normalizeHeaders(value.headers || existing.headers),
   body: typeof value.body === 'undefined' ? (existing.body || '') : value.body,
   delayMs: Number.isFinite(Number(value.delayMs)) ? Math.max(0, Number(value.delayMs)) : (existing.delayMs || 0),

@@ -23,16 +23,21 @@ class BridgeClient {
     this.fetchImpl = fetchImpl;
   }
 
-  async request(pathname, params, pathParameterNames = []) {
+  async request(pathname, params, pathParameterNames = [], method = 'GET') {
     const query = Object.fromEntries(Object.entries(params || {}).filter(([key]) => !pathParameterNames.includes(key)));
-    const url = addQuery(new URL(`${this.bridgeUrl}${pathname}`), query);
+    const url = method === 'GET'
+      ? addQuery(new URL(`${this.bridgeUrl}${pathname}`), query)
+      : new URL(`${this.bridgeUrl}${pathname}`);
     let response;
     try {
       response = await this.fetchImpl(url, {
         headers: {
           Accept: 'application/json',
           Authorization: `Bearer ${this.token}`,
+          ...(method !== 'GET' ? { 'Content-Type': 'application/json' } : {}),
         },
+        method,
+        ...(method !== 'GET' ? { body: JSON.stringify(query) } : {}),
       });
     } catch (error) {
       throw createBridgeError(`Unable to reach React Native Debugger Agent Bridge: ${error.message}`)
@@ -62,6 +67,18 @@ class BridgeClient {
   getNetworkRequest(args) { return this.request(`/v1/sessions/${encodeURIComponent(args.sessionId)}/network/${encodeURIComponent(args.requestId)}`, args, ['sessionId', 'requestId']) }
 
   waitForDebugEvent(args) { return this.request(`/v1/sessions/${encodeURIComponent(args.sessionId)}/events`, { ...args, limit: 1 }, ['sessionId']) }
+
+  listNetworkMocks(args = {}) { return this.request('/v1/network-mocks', args) }
+
+  saveNetworkMock(args) { return this.request('/v1/network-mocks', args, [], 'POST') }
+
+  setNetworkMockEnabled(args) {
+    return this.request(`/v1/network-mocks/${encodeURIComponent(args.id)}/enabled`, args, ['id'], 'POST')
+  }
+
+  removeNetworkMock(args) {
+    return this.request(`/v1/network-mocks/${encodeURIComponent(args.id)}`, args, ['id'], 'DELETE')
+  }
 }
 
 module.exports = { BridgeClient, createBridgeError, addQuery };

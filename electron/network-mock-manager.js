@@ -65,7 +65,7 @@ const html = `<!doctype html>
         <div class="mock-box" data-box="mockRequestHeadersEnabled"><div class="mock-title">请求头 <label class="toggle"><input id="mockRequestHeadersEnabled" type="checkbox">启用</label></div><textarea id="mockRequestHeaders" placeholder='{"authorization":"Bearer mock-token"}'></textarea></div>
         <div class="mock-box" data-box="mockRequestBodyEnabled"><div class="mock-title">请求正文 <label class="toggle"><input id="mockRequestBodyEnabled" type="checkbox">启用</label></div><textarea id="mockRequestBody" placeholder='{"example":"mock request body"}'></textarea></div>
       </div></section>
-      <section class="section"><div class="section-title">响应 Mock <span>开启任意响应项会阻止真实网络请求</span></div><div class="switches">
+      <section class="section"><div class="section-title">响应 Mock <label class="toggle"><input id="mixedResponseEnabled" type="checkbox">混合响应（真实请求后覆盖已启用项）</label></div><div class="switches">
         <div class="mock-box" data-box="mockResponseHeadersEnabled"><div class="mock-title">响应头 <label class="toggle"><input id="mockResponseHeadersEnabled" type="checkbox" checked>启用</label></div><textarea id="headers" placeholder='{"content-type":"application/json"}'>{}</textarea></div>
         <div class="mock-box" data-box="mockResponseBodyEnabled"><div class="mock-title">响应正文 <label class="toggle"><input id="mockResponseBodyEnabled" type="checkbox" checked>启用</label></div><textarea id="body" placeholder='{"code":0,"data":{}}'></textarea></div>
       </div></section>
@@ -81,7 +81,7 @@ const html = `<!doctype html>
   const $ = id => document.getElementById(id)
   let rules = []
   const text = value => typeof value === 'string' ? value : JSON.stringify(value || {}, null, 2)
-  const empty = () => ({ id: '', url: '', urlMatchType: 'exact', method: '', status: 200, enabled: true, headers: {}, body: '', delayMs: 0, mockRequestHeaders: {}, mockRequestBody: '', mockRequestHeadersEnabled: false, mockRequestBodyEnabled: false, mockResponseHeadersEnabled: true, mockResponseBodyEnabled: true, originalRequestHeaders: {}, originalRequestBody: '' })
+  const empty = () => ({ id: '', url: '', urlMatchType: 'exact', method: '', status: 200, enabled: true, headers: {}, body: '', delayMs: 0, mockRequestHeaders: {}, mockRequestBody: '', mockRequestHeadersEnabled: false, mockRequestBodyEnabled: false, mockResponseHeadersEnabled: true, mockResponseBodyEnabled: true, mixedResponseEnabled: false, originalRequestHeaders: {}, originalRequestBody: '' })
   const updateBoxes = () => ['mockRequestHeadersEnabled','mockRequestBodyEnabled','mockResponseHeadersEnabled','mockResponseBodyEnabled'].forEach(id => $(id).closest('.mock-box').classList.toggle('off', !$(id).checked))
   const show = rule => {
     const value = rule || empty()
@@ -90,7 +90,7 @@ const html = `<!doctype html>
     $('headers').value = text(value.headers); $('body').value = text(value.body || '')
     $('originalRequestHeaders').value = text(value.originalRequestHeaders || value.requestHeaders); $('originalRequestBody').value = text(value.originalRequestBody || value.requestBody || '')
     $('mockRequestHeadersEnabled').checked = value.mockRequestHeadersEnabled === true; $('mockRequestBodyEnabled').checked = value.mockRequestBodyEnabled === true
-    $('mockResponseHeadersEnabled').checked = value.mockResponseHeadersEnabled !== false; $('mockResponseBodyEnabled').checked = value.mockResponseBodyEnabled !== false; $('enabled').checked = value.enabled !== false
+    $('mockResponseHeadersEnabled').checked = value.mockResponseHeadersEnabled !== false; $('mockResponseBodyEnabled').checked = value.mockResponseBodyEnabled !== false; $('mixedResponseEnabled').checked = value.mixedResponseEnabled === true; $('enabled').checked = value.enabled !== false
     $('title').textContent = value.id ? '编辑 Mock 规则' : '新建 Mock 规则'; $('delete').hidden = !value.id; updateBoxes()
   }
   const render = async () => {
@@ -107,7 +107,7 @@ const html = `<!doctype html>
     const id = $('id').value.trim()
     const saved = await ipcRenderer.invoke('network-mock-save', { id: id || undefined, url: $('url').value, urlMatchType: $('urlMatchType').value, method: $('method').value, status: $('status').value, enabled: $('enabled').checked, delayMs: $('delayMs').value,
       mockRequestHeadersEnabled: $('mockRequestHeadersEnabled').checked, mockRequestHeaders: parseHeaders('mockRequestHeaders', '请求头'), mockRequestBodyEnabled: $('mockRequestBodyEnabled').checked, mockRequestBody: parseBody('mockRequestBody'),
-      mockResponseHeadersEnabled: $('mockResponseHeadersEnabled').checked, mockResponseBodyEnabled: $('mockResponseBodyEnabled').checked, headers: parseHeaders('headers', '响应头'), body: parseBody('body'),
+      mockResponseHeadersEnabled: $('mockResponseHeadersEnabled').checked, mockResponseBodyEnabled: $('mockResponseBodyEnabled').checked, mixedResponseEnabled: $('mixedResponseEnabled').checked, headers: parseHeaders('headers', '响应头'), body: parseBody('body'),
       originalRequestHeaders: parseHeaders('originalRequestHeaders', '原始请求头'), originalRequestBody: $('originalRequestBody').value,
     }); await render(); show(saved)
   } catch (error) { alert(error.message || '保存失败') } }

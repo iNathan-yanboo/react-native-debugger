@@ -39,9 +39,17 @@ DMG 还依赖 `electron-installer-dmg` 的完整 macOS 可选依赖；依赖齐�
 {
   agentBridge: {
     enabled: true,
+    persistHistory: false,
+    persistSensitiveDataMode: true,
   },
 }
 ```
+
+如不希望断开后的会话历史写入本地磁盘，请保留 `persistHistory: false`。它只关闭
+Agent Bridge 的磁盘历史归档；当前会话仍使用有上限的内存缓冲，MCP Sidecar 本身
+也不会持久化读取结果。`persistSensitiveDataMode: true` 会持久化
+**Allow Agent Raw Sensitive Data** 的勾选状态，但不会持久化采集内容。修改后需要重启
+Debugger。
 
 3. 重启 Debugger，并让 RN 应用连接 Remote JS Debugging。
 4. 在 Codex 中注册随应用分发的 MCP：

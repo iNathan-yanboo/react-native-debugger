@@ -62,6 +62,8 @@ We could configure RNDebugger app in `~/.rndebuggerrc` (the config can be opened
     // Disconnected sessions are moved to a user-private disk archive and
     // removed from the Electron main-process heap.
     persistHistory: true,
+    // Remember the Allow Agent Raw Sensitive Data choice across new sessions.
+    persistSensitiveDataMode: true,
     maxHistoricalSessions: 2,
     maxHistoryDiskBytes: 268435456,
     historyTtlMinutes: 1440,

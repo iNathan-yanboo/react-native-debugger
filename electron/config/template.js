@@ -46,8 +46,8 @@ module.exports = `{
   defaultNetworkInspect: false,
 
   // Expose read-only console, Redux, and Network Inspect data to local agents.
-  // Sensitive values are redacted unless raw mode is explicitly enabled for
-  // the current session from the Debugger menu.
+  // Sensitive values are redacted unless raw mode is enabled from the
+  // Debugger menu. The mode preference is remembered across new sessions.
   agentBridge: {
     enabled: false,
     maxConsoleEvents: 2000,
@@ -59,6 +59,9 @@ module.exports = `{
     // Disconnected sessions are moved out of the Electron heap. History is
     // stored only for the current OS user and is removed by these limits.
     persistHistory: true,
+    // Remember the Allow Agent Raw Sensitive Data choice across reloads,
+    // new JS runtimes, and React Native Debugger restarts.
+    persistSensitiveDataMode: true,
     maxHistoricalSessions: 2,
     maxHistoryDiskBytes: 268435456,
     historyTtlMinutes: 1440,

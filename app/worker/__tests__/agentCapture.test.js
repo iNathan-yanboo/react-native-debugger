@@ -88,6 +88,26 @@ describe('agentCapture', () => {
     }])
   })
 
+  it('does not duplicate Redux DevTools console triplets in the Agent Bridge', () => {
+    const host = createHost()
+    const events = []
+    const capture = createAgentCapture({ host, emit: (event) => events.push(event) })
+    const originalLog = host.console.log
+    capture.configure({ enabled: true })
+
+    host.console.log('%c prev state | color: #9E9E9E', { cart: { count: 1 } })
+    host.console.log('%c action     | color: #03A9F4', { type: 'ADD_ITEM' })
+    host.console.log('%c next state | color: #4CAF50', { cart: { count: 2 } })
+    host.console.log('business trace', { traceId: 'keep-me' })
+
+    expect(events).toHaveLength(1)
+    expect(events[0].payload).toEqual({
+      level: 'log',
+      arguments: ['business trace', { traceId: 'keep-me' }],
+    })
+    expect(originalLog).toHaveBeenCalledTimes(4)
+  })
+
   it('captures runtime errors and raw values when raw mode is explicitly enabled', () => {
     const host = createHost()
     const events = []

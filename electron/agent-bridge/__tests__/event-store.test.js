@@ -155,3 +155,19 @@ test('moves disconnected session payloads out of the main-process store', () => 
     fs.rmSync(directory, { recursive: true, force: true })
   }
 })
+
+test('discards disconnected session payloads when history persistence is disabled', () => {
+  const store = new AgentEventStore()
+  const sessionId = 'no-history-session'
+  store.registerSession({ sessionId, sensitiveDataMode: 'redacted' })
+  store.ingest({
+    sessionId,
+    type: 'log',
+    payload: { message: 'discard after disconnect' },
+  })
+
+  store.archiveSession(sessionId)
+
+  expect(store.listSessions()).toEqual([])
+  expect(store.getSession(sessionId)).toBeNull()
+})

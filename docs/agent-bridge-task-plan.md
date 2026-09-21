@@ -107,14 +107,15 @@ Deliverables:
 - renderer-to-main event routing
 - session create/disconnect/reload lifecycle
 - per-session `redacted`/`raw` UI control
-- explicit raw-mode warning and automatic reset
+- explicit raw-mode warning and remembered mode preference
 - configuration documentation
 
 Exit checks:
 
 - Agent cannot enable raw mode
 - raw mode affects only events captured after the switch
-- reload, disconnect, and restart reset to redacted
+- reload, new JS runtime, and restart restore the saved mode preference;
+  sessions without one start redacted
 - disabled bridge creates no listener, discovery file, or capture overhead
 
 ## Integration sequence
@@ -124,14 +125,15 @@ Exit checks:
 3. Create a session when the debugger worker connects.
 4. Forward worker and Redux events through IPC.
 5. Add the sensitive-data mode UI and confirmation.
-6. Reset the mode and close the session on worker shutdown/reload.
+6. Apply the saved mode preference and close the session on worker shutdown/reload.
 7. Connect and smoke-test MCP tools against the running app.
 8. Extend E2E fixtures and run the full validation matrix.
 
 ## Implemented decisions
 
 - The sensitive-data control is **Debugger → Allow Agent Raw Sensitive Data**.
-  It is scoped to the focused debugger window and current session.
+  It is scoped to the focused debugger window and current session, while its
+  selected mode can be remembered across new sessions.
 - Sessions are retained in bounded process memory after disconnect and evicted
   by least recent activity when the 20-session limit is reached.
 - `get_redux_state` is updated by `STATE`, `INIT`, and `ACTION`; an `ACTION`
@@ -154,10 +156,10 @@ Exit checks:
 
 | Area | Redacted | Raw | Reload/reset | Disabled |
 | --- | --- | --- | --- | --- |
-| Console | sensitive fields hidden | original values available | new session redacted | unchanged |
-| Redux | common sensitive keys hidden | post-switch state/actions raw | new session redacted | unchanged |
-| fetch | headers/query/body hidden | post-switch request/response raw | new session redacted | unchanged |
-| direct XHR | headers/query/body hidden | post-switch request/response raw | new session redacted | unchanged |
+| Console | sensitive fields hidden | original values available | saved mode restored | unchanged |
+| Redux | common sensitive keys hidden | post-switch state/actions raw | saved mode restored | unchanged |
+| fetch | headers/query/body hidden | post-switch request/response raw | saved mode restored | unchanged |
+| direct XHR | headers/query/body hidden | post-switch request/response raw | saved mode restored | unchanged |
 | MCP | mode returned | warning returned | old/new sessions distinct | bridge unavailable |
 
 ## Verification status

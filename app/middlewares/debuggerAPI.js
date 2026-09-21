@@ -31,8 +31,16 @@ let port
 let socket
 let agentCaptureConfig = { enabled: false }
 let networkMockConfig = { enabled: false, rules: [] }
-
 const APOLLO_MESSAGE_PREFIX = 'ac-devtools:'
+
+const updateAgentBridgeSessionStatus = (status, reason) => {
+  if (!agentCaptureConfig.enabled) return
+  ipcRenderer.send('agent-bridge-session-status', {
+    sessionId: agentCaptureConfig.sessionId,
+    status,
+    ...(reason ? { reason } : {}),
+  })
+}
 
 const workerOnMessage = (message) => {
   const { data } = message
@@ -108,6 +116,18 @@ const shutdownJSRuntime = () => {
   }
 }
 
+const suspendJSRuntimeForClientDisconnect = (reason = 'client-disconnected') => {
+  if (!worker) return
+  actions.setDebuggerStatus('waiting')
+  updateAgentBridgeSessionStatus('suspended', reason)
+}
+
+const resumeSuspendedJSRuntime = () => {
+  if (!worker) return
+  actions.setDebuggerStatus('connected')
+  updateAgentBridgeSessionStatus('connected')
+}
+
 const isScriptBuildForAndroid = (url) => url && (url.indexOf('.android.bundle') > -1 || url.indexOf('platform=android') > -1)
 
 let preconnectTimeout
@@ -164,7 +184,7 @@ const connectToDebuggerProxy = async () => {
 
     const object = JSON.parse(message.data)
     if (object.$event === 'client-disconnected') {
-      shutdownJSRuntime()
+      suspendJSRuntimeForClientDisconnect()
       return
     }
     if (!object.method) return
@@ -182,9 +202,10 @@ const connectToDebuggerProxy = async () => {
       selectRNDebuggerWorkerContext(currentWindow)
       ws.send(JSON.stringify({ replyID: object.id }))
     } else if (object.method === '$disconnected') {
-      shutdownJSRuntime()
+      suspendJSRuntimeForClientDisconnect('debugger-disconnected')
     } else {
       if (!worker) return
+      resumeSuspendedJSRuntime()
       if (object.method === 'executeApplicationScript') {
         object.networkInspect = networkInspect.isEnabled()
         object.networkMock = networkMockConfig
@@ -213,7 +234,7 @@ const connectToDebuggerProxy = async () => {
 
   ws.onerror = () => {}
   ws.onclose = (e) => {
-    shutdownJSRuntime()
+    suspendJSRuntimeForClientDisconnect('debugger-websocket-closed')
     if (e.reason) {
       console.warn(e.reason)
     }

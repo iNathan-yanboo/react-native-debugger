@@ -2,6 +2,7 @@ const DEFAULT_MAX_BODY_BYTES = 256 * 1024
 const REDACTED_VALUE = '[REDACTED]'
 const TRUNCATED_SUFFIX = '…[truncated]'
 const sensitiveKeyPattern = /authorization|cookie|token|password|secret|api[-_]?key|session/i
+const reduxConsolePattern = /^%c (?:prev state|action|next state)\s*\|\s*color:/
 
 const getDefaultHost = () => (typeof self === 'undefined' ? {} : self)
 
@@ -210,7 +211,15 @@ export const createAgentCapture = ({ host = getDefaultHost(), emit, now = Date.n
       if (typeof original !== 'function') return
       originalConsole[level] = original
       host.console[level] = function capturedConsole(...args) {
-        publish('console', { level, arguments: args })
+        // Redux is already captured through reduxAPI. Re-sending its verbose
+        // prev/action/next console triplet duplicates large state snapshots.
+        if (!(
+          level === 'log'
+          && typeof args[0] === 'string'
+          && reduxConsolePattern.test(args[0])
+        )) {
+          publish('console', { level, arguments: args })
+        }
         return original.apply(host.console, args)
       }
     })

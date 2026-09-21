@@ -8,6 +8,7 @@ import {
   ipcMain,
   Menu,
 } from 'electron'
+import Store from 'electron-store'
 import {
   AgentEventStore,
   createAgentBridge,
@@ -21,6 +22,10 @@ import {
   saveNetworkMock,
   setNetworkMockEnabled,
 } from '../network-mock-store'
+import {
+  readSensitiveDataMode,
+  writeSensitiveDataMode,
+} from './sensitive-data-preference'
 
 const DEFAULTS = {
   enabled: false,
@@ -30,6 +35,7 @@ const DEFAULTS = {
   maxEvents: 4000,
   maxBodyBytes: 256 * 1024,
   persistHistory: true,
+  persistSensitiveDataMode: true,
   maxHistoricalSessions: 2,
   maxHistoryDiskBytes: 256 * 1024 * 1024,
   historyTtlMinutes: 24 * 60,
@@ -37,6 +43,7 @@ const DEFAULTS = {
 
 const sessionsByWebContents = new Map()
 const pendingModes = new Map()
+const sensitiveDataPreferenceStore = new Store({ name: 'agent-bridge-preferences' })
 let bridge
 let runtimeConfig = { ...DEFAULTS }
 let ipcRegistered = false
@@ -59,6 +66,19 @@ const getHistoryPath = () => path.join(
   'agent-bridge-history',
   'v1',
 )
+
+const getPreferredSensitiveDataMode = () => readSensitiveDataMode(
+  sensitiveDataPreferenceStore,
+  runtimeConfig.persistSensitiveDataMode !== false,
+)
+
+const rememberSensitiveDataMode = (sensitiveDataMode) => {
+  writeSensitiveDataMode(
+    sensitiveDataPreferenceStore,
+    sensitiveDataMode,
+    runtimeConfig.persistSensitiveDataMode !== false,
+  )
+}
 
 const getMenuItem = () => {
   const menu = Menu.getApplicationMenu()
@@ -119,6 +139,19 @@ export const endAgentBridgeSession = (webContentsId) => {
   syncAgentBridgeMenu(BrowserWindow.getFocusedWindow())
 }
 
+const updateAgentBridgeSessionStatus = (
+  webContentsId,
+  { sessionId, status, reason } = {},
+) => {
+  if (!bridge || !sessionId || sessionsByWebContents.get(webContentsId) !== sessionId) return
+  if (status !== 'suspended' && status !== 'connected') return
+  updateSessionMetadata(sessionId, {
+    status,
+    ...(status === 'suspended' ? { suspendedAt: Date.now() } : { resumedAt: Date.now() }),
+    ...(reason ? { disconnectReason: reason } : {}),
+  })
+}
+
 const normalizeEvent = (event, mode) => {
   const payload = mode === 'raw' ? event.payload : redactValue(event.payload)
   return {
@@ -170,9 +203,10 @@ const beginSession = (event, metadata = {}) => {
   if (!bridge || !runtimeConfig.enabled) return { enabled: false }
   endSession(event.sender.id)
   const sessionId = createSessionId()
+  const sensitiveDataMode = getPreferredSensitiveDataMode()
   bridge.registerSession({
     sessionId,
-    sensitiveDataMode: 'redacted',
+    sensitiveDataMode,
     metadata: {
       ...metadata,
       webContentsId: event.sender.id,
@@ -185,7 +219,7 @@ const beginSession = (event, metadata = {}) => {
   return {
     enabled: true,
     sessionId,
-    sensitiveDataMode: 'redacted',
+    sensitiveDataMode,
     maxBodyBytes: runtimeConfig.maxBodyBytes,
   }
 }
@@ -195,6 +229,7 @@ const applyModeAcknowledgement = (event, { sessionId, sensitiveDataMode }) => {
   const pendingMode = pendingModes.get(event.sender.id)
   if (!bridge || currentSessionId !== sessionId || pendingMode !== sensitiveDataMode) return
   bridge.setSessionSensitiveDataMode(sessionId, sensitiveDataMode)
+  rememberSensitiveDataMode(sensitiveDataMode)
   pendingModes.delete(event.sender.id)
   syncAgentBridgeMenu(BrowserWindow.fromWebContents(event.sender))
 }
@@ -208,6 +243,10 @@ export const registerAgentBridgeIpc = () => {
   ipcMain.on('agent-bridge-session-end', (event, { sessionId } = {}) => {
     if (sessionId && sessionsByWebContents.get(event.sender.id) !== sessionId) return
     endSession(event.sender.id)
+    syncAgentBridgeMenu(BrowserWindow.fromWebContents(event.sender))
+  })
+  ipcMain.on('agent-bridge-session-status', (event, payload) => {
+    updateAgentBridgeSessionStatus(event.sender.id, payload)
     syncAgentBridgeMenu(BrowserWindow.fromWebContents(event.sender))
   })
   ipcMain.on('agent-bridge-event', (event, capturedEvent) => {
@@ -286,9 +325,14 @@ export const requestRawSensitiveDataForWindow = async (win, enabled) => {
       cancelId: 0,
       title: 'Allow Agent Access to Sensitive Data?',
       message: 'Raw mode may expose credentials, personal data, Redux state, and request bodies to local agents.',
-      detail: runtimeConfig.persistHistory === false
-        ? 'This applies only to the current debug session and resets after reload or disconnect.'
-        : 'This applies to the current session. After reload or disconnect, captured raw data may remain in the local history archive until its configured cleanup limit expires.',
+      detail: [
+        runtimeConfig.persistSensitiveDataMode === false
+          ? 'The raw-data choice applies only to the current debug session and resets after reload or restart.'
+          : 'The raw-data choice is remembered across reloads, new JS runtimes, and Debugger restarts.',
+        runtimeConfig.persistHistory === false
+          ? 'Captured raw data is discarded when the session ends.'
+          : 'Captured raw data may remain in the local history archive after the session ends until its cleanup limits apply.',
+      ].join(' '),
     })
     if (result.response !== 1) {
       syncAgentBridgeMenu(win)

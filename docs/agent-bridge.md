@@ -22,6 +22,7 @@ Open **Debugger → Open Config File** and add:
   maxEvents: 4000,
   maxBodyBytes: 262144,
   persistHistory: true,
+  persistSensitiveDataMode: true,
   maxHistoricalSessions: 2,
   maxHistoryDiskBytes: 268435456,
   historyTtlMinutes: 1440,
@@ -37,7 +38,10 @@ current-user-only local archive until either `maxHistoricalSessions`,
 `maxHistoryDiskBytes`, or `historyTtlMinutes` requires cleanup. Set
 `persistHistory: false` to discard disconnected-session history immediately.
 Raw-mode data follows the same retention policy; the confirmation dialog
-states this before raw mode is enabled.
+states this before raw mode is enabled. `persistSensitiveDataMode: true`
+remembers the **Allow Agent Raw Sensitive Data** choice across reloads, new JS
+runtimes, and Debugger restarts. It stores only the mode preference, not
+captured data. Set it to `false` to restore redacted mode for every new session.
 
 When enabled, RNDebugger starts an authenticated HTTP server on a random
 `127.0.0.1` port and writes discovery metadata to:
@@ -126,7 +130,8 @@ Example targeted arguments:
 
 ## Sensitive-data modes
 
-Every new or reloaded session starts in `redacted` mode. Authorization headers,
+Every new or reloaded session starts in the remembered mode, or `redacted` when
+no mode preference exists. Authorization headers,
 cookies, common credential query values, and sensitive JSON/Redux keys are
 redacted.
 
@@ -136,10 +141,11 @@ When original values are required for debugging, use:
 
 RNDebugger shows a warning before enabling raw mode. Raw mode:
 
-- applies only to the current session;
+- applies to events captured by the current session;
 - affects only events captured after the switch;
 - is clearly reported in every bridge/MCP result;
-- resets to redacted after reload or disconnect;
+- keeps the user preference across reload, new JS runtime, and Debugger restart
+  when `persistSensitiveDataMode` is enabled;
 - cannot be enabled by an MCP tool or agent.
 
 Previously captured raw events remain marked as raw while retained in memory.

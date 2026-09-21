@@ -17,6 +17,10 @@
 {
   agentBridge: {
     enabled: true,
+    // 不把断开后的会话历史写入本地磁盘
+    persistHistory: false,
+    // 记住 Allow Agent Raw Sensitive Data 的勾选状态
+    persistSensitiveDataMode: true,
   },
 }
 ```
@@ -24,9 +28,14 @@
 保存后重启 **React Native Debugger-mcp**，再让 RN 应用连接
 Remote JS Debugging。
 
+`persistHistory: false` 会关闭 Agent Bridge 的磁盘历史归档；当前会话仍只保留在
+有上限的内存缓冲中，断开或 Reload 后不会为 MCP 保留历史数据。`persistSensitiveDataMode: true`
+会记住 **Allow Agent Raw Sensitive Data** 的勾选状态，使它跨 Reload、新 JS
+Runtime 和 Debugger 重启保留；它只保存模式值，不保存日志、Redux 或网络正文。
+
 > 默认会脱敏日志、Redux 和网络数据。如确需调试敏感数据，可在应用菜单
-> 选择 **Debugger → Allow Agent Raw Sensitive Data**。每次新会话默认
-> 恢复脱敏模式。
+> 选择 **Debugger → Allow Agent Raw Sensitive Data**。首次没有保存偏好时默认脱敏；
+> 之后会按上次保存的勾选状态启动。
 
 ### 2.1 配置接口 Mock（可选）
 

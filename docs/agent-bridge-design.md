@@ -105,7 +105,7 @@ No captured events are persisted to disk by default.
 
 ### `redacted`
 
-This is the default for every new session.
+This is the default for every new session when no saved mode preference exists.
 
 It redacts:
 
@@ -126,9 +126,11 @@ flows.
 Rules:
 
 - It is enabled explicitly by the user.
-- It applies to the current session only.
-- New sessions always start in `redacted`.
-- Disconnecting, reloading, or restarting resets the mode to `redacted`.
+- Captured events remain scoped to the current session.
+- The user-selected mode is remembered across reload, new JS runtimes, and
+  restarts when `persistSensitiveDataMode` is enabled.
+- New sessions start in `redacted` when no saved preference exists or when
+  `persistSensitiveDataMode` is disabled.
 - The debugger UI exposes the current-window control at **Debugger → Allow
   Agent Raw Sensitive Data**; its checked state reflects the focused window's
   active session.
@@ -146,7 +148,7 @@ Recommended config defaults:
 ```js
 agentBridge: {
   enabled: false,
-  defaultSensitiveDataMode: 'redacted',
+  persistSensitiveDataMode: true,
   maxConsoleEvents: 2000,
   maxReduxActions: 1000,
   maxNetworkRequests: 500,
@@ -154,8 +156,9 @@ agentBridge: {
 }
 ```
 
-`defaultSensitiveDataMode: 'raw'` should not be supported. Raw mode is a
-runtime, session-scoped user decision.
+`persistSensitiveDataMode` stores only the user's `redacted`/`raw` preference;
+it does not persist captured payloads. Raw mode is still enabled only through
+the debugger UI, and agents cannot enable it themselves.
 
 ## Storage and payload limits
 
@@ -323,7 +326,8 @@ The sidecar never stores the bearer token in MCP results or logs.
 6. A user can switch the current session to raw mode from RNDebugger UI.
 7. Agents cannot switch to raw mode.
 8. Every response reports the current sensitive-data mode.
-9. Reload, disconnect, and restart reset the new session to redacted.
+9. Reload, new JS runtimes, and restart restore the saved mode preference;
+   sessions without a saved preference start redacted.
 10. The bridge cannot be reached from non-loopback interfaces or without the
     current token.
 11. Existing console, Redux DevTools, Network Inspect, and debugger proxy

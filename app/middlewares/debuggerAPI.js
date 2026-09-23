@@ -23,6 +23,13 @@ const currentWindow = getCurrentWindow()
 const { SET_DEBUGGER_LOCATION, BEFORE_WINDOW_CLOSE } = debuggerActions
 
 let worker
+let workerSocket
+let removeWorkerListeners
+let runtimeSuspended = false
+let runtimeSequence = 0
+let connectionGeneration = 0
+let connectionSequence = 0
+let rendererUnloaded = false
 let queuedMessages = []
 let scriptExecuted = false
 let actions
@@ -32,6 +39,29 @@ let socket
 let agentCaptureConfig = { enabled: false }
 let networkMockConfig = { enabled: false, rules: [] }
 const APOLLO_MESSAGE_PREFIX = 'ac-devtools:'
+const connectionDiagnostics = []
+const MAX_CONNECTION_DIAGNOSTICS = 200
+const knownCloseReasons = new Set([
+  '',
+  'Another debugger is already connected',
+  'Debugger was disconnected',
+  'Client was disconnected',
+])
+
+// Keep a bounded, payload-free trace across the usual console clears on Reload.
+window.getRNDebuggerConnectionDiagnostics = () => connectionDiagnostics.map((entry) => ({ ...entry }))
+const recordConnectionEvent = (event, details = {}) => {
+  const entry = {
+    timestamp: Date.now(),
+    event,
+    connectionId: connectionSequence,
+    runtimeId: runtimeSequence,
+    ...details,
+  }
+  connectionDiagnostics.push(entry)
+  if (connectionDiagnostics.length > MAX_CONNECTION_DIAGNOSTICS) connectionDiagnostics.shift()
+  // Do not mirror the trace into unbounded DevTools console history.
+}
 
 const updateAgentBridgeSessionStatus = (status, reason) => {
   if (!agentCaptureConfig.enabled) return
@@ -42,7 +72,32 @@ const updateAgentBridgeSessionStatus = (status, reason) => {
   })
 }
 
-const workerOnMessage = (message) => {
+const suspendJSRuntimeForClientDisconnect = (reason = 'client-disconnected') => {
+  queuedMessages = []
+  if (!worker || runtimeSuspended) return
+  runtimeSuspended = true
+  actions.setDebuggerStatus('waiting')
+  updateAgentBridgeSessionStatus('suspended', reason)
+  recordConnectionEvent('runtime-suspended', { reason })
+}
+
+const sendDebuggerMessage = (ws, data) => {
+  if (rendererUnloaded || !ws || ws !== socket || ws.readyState !== WebSocket.OPEN) return false
+  try {
+    ws.send(JSON.stringify(data))
+    return true
+  } catch (error) {
+    // Do not queue/replay replies: their IDs belong to the original native runtime.
+    recordConnectionEvent('socket-send-failed', { readyState: ws.readyState })
+    suspendJSRuntimeForClientDisconnect('debugger-websocket-send-failed')
+    ws.close()
+    return false
+  }
+}
+
+const workerOnMessage = (message, sourceWorker, ownerSocket) => {
+  // A terminated worker may still have a callback already queued in the renderer.
+  if (rendererUnloaded || sourceWorker !== worker) return false
   const { data } = message
 
   if (data && data.agentCaptureEvent) {
@@ -70,10 +125,12 @@ const workerOnMessage = (message) => {
     setDevMenuMethods(list, worker)
     return false
   }
-  socket.send(JSON.stringify(data))
+  if (runtimeSuspended || workerSocket !== ownerSocket) return false
+  return sendDebuggerMessage(ownerSocket, data)
 }
 
 const onWindowMessage = (e) => {
+  if (!worker || rendererUnloaded) return
   const { data } = e
   if (
     !data?.__FROM_DEBUGGER_WORKER__ &&
@@ -87,27 +144,51 @@ const onWindowMessage = (e) => {
   }
 }
 
-const createJSRuntime = () => {
-  // This worker will run the application javascript code,
-  // making sure that it's run in an environment without a global
-  // document, to make it consistent with the JSC executor environment.
-  // eslint-disable-next-line
-  worker = new Worker(`${__webpack_public_path__}RNDebuggerWorker.js`);
-  worker.addEventListener('message', workerOnMessage)
+const createJSRuntime = (ws) => {
+  // Execute app JavaScript without a document, as in the native JSC environment.
+  // eslint-disable-next-line no-undef, camelcase
+  const runtimeWorker = new Worker(`${__webpack_public_path__}RNDebuggerWorker.js`)
+  worker = runtimeWorker
+  workerSocket = ws
+  runtimeSuspended = false
+  runtimeSequence += 1
+  const onMessage = (message) => workerOnMessage(message, runtimeWorker, ws)
+  const onError = (error) => {
+    if (runtimeWorker !== worker || rendererUnloaded) return
+    // Leave the original error visible in DevTools; do not copy app values/URLs.
+    recordConnectionEvent('worker-error', { line: error.lineno, column: error.colno })
+  }
+  const onMessageError = () => {
+    if (runtimeWorker === worker && !rendererUnloaded) recordConnectionEvent('worker-message-error')
+  }
+  runtimeWorker.addEventListener('message', onMessage)
+  runtimeWorker.addEventListener('error', onError)
+  runtimeWorker.addEventListener('messageerror', onMessageError)
+  removeWorkerListeners = () => {
+    runtimeWorker.removeEventListener('message', onMessage)
+    runtimeWorker.removeEventListener('error', onError)
+    runtimeWorker.removeEventListener('messageerror', onMessageError)
+  }
   window.addEventListener('message', onWindowMessage)
-  actions.setDebuggerWorker(worker, 'connected')
+  actions.setDebuggerWorker(runtimeWorker, 'connected')
+  recordConnectionEvent('runtime-prepared')
 }
 
 const shutdownJSRuntime = () => {
-  const { setDebuggerWorker } = actions
   scriptExecuted = false
+  queuedMessages = []
+  workerSocket = null
+  runtimeSuspended = false
+  removeWorkerListeners?.()
+  removeWorkerListeners = null
+  window.removeEventListener('message', onWindowMessage)
   if (worker) {
     worker.terminate()
-    window.removeEventListener('message', onWindowMessage)
     setDevMenuMethods([])
+    recordConnectionEvent('runtime-stopped')
   }
   worker = null
-  setDebuggerWorker(null, 'disconnected')
+  actions.setDebuggerWorker(null, 'disconnected')
   if (agentCaptureConfig.enabled) {
     ipcRenderer.send('agent-bridge-session-end', {
       sessionId: agentCaptureConfig.sessionId,
@@ -116,27 +197,37 @@ const shutdownJSRuntime = () => {
   }
 }
 
-const suspendJSRuntimeForClientDisconnect = (reason = 'client-disconnected') => {
-  if (!worker) return
-  actions.setDebuggerStatus('waiting')
-  updateAgentBridgeSessionStatus('suspended', reason)
-}
-
-const resumeSuspendedJSRuntime = () => {
-  if (!worker) return
-  actions.setDebuggerStatus('connected')
-  updateAgentBridgeSessionStatus('connected')
-}
-
 const isScriptBuildForAndroid = (url) => url && (url.indexOf('.android.bundle') > -1 || url.indexOf('platform=android') > -1)
 
 let preconnectTimeout
-const preconnect = async (fn, firstTimeout) => {
-  if (firstTimeout || (await checkPortStatus(port, host)) !== 'open') {
-    preconnectTimeout = setTimeout(() => preconnect(fn), 500)
+let reconnectScheduled = false
+const preconnect = async (fn, firstTimeout = false, generation = connectionGeneration) => {
+  if (rendererUnloaded || generation !== connectionGeneration) return
+  clearTimeout(preconnectTimeout)
+  preconnectTimeout = null
+  if (firstTimeout) {
+    if (!reconnectScheduled) recordConnectionEvent('reconnect-scheduled', { delayMs: 500 })
+    reconnectScheduled = true
+    preconnectTimeout = setTimeout(() => preconnect(fn, false, generation), 500)
     return
   }
-  socket = await fn()
+  try {
+    const status = await checkPortStatus(port, host)
+    // The target or renderer may have changed while the port probe was pending.
+    if (rendererUnloaded || generation !== connectionGeneration) return
+    if (status !== 'open') {
+      preconnect(fn, true, generation)
+      return
+    }
+    if (!socket) {
+      socket = fn(generation)
+      reconnectScheduled = false
+    }
+  } catch (error) {
+    if (rendererUnloaded || generation !== connectionGeneration) return
+    if (!reconnectScheduled) recordConnectionEvent('connection-attempt-failed')
+    preconnect(fn, true, generation)
+  }
 }
 
 const clearLogs = () => {
@@ -174,15 +265,31 @@ const checkJSLoadCount = () => {
   }
 }
 
-const connectToDebuggerProxy = async () => {
+const connectToDebuggerProxy = (generation) => {
   const ws = new WebSocket(`ws://${host}:${port}/debugger-proxy?role=debugger&name=Chrome`)
 
-  const { setDebuggerStatus } = actions
-  ws.onopen = () => setDebuggerStatus('waiting')
-  ws.onmessage = async (message) => {
-    if (!message.data) return
+  connectionSequence += 1
+  recordConnectionEvent('socket-connecting')
+  const isCurrent = () => !rendererUnloaded && generation === connectionGeneration && socket === ws
+  ws.onopen = () => {
+    if (!isCurrent()) return
+    actions.setDebuggerStatus('waiting')
+    recordConnectionEvent('socket-open')
+  }
+  ws.onmessage = (message) => {
+    if (!isCurrent() || ws.readyState !== WebSocket.OPEN || !message.data) return
 
-    const object = JSON.parse(message.data)
+    let object
+    try {
+      object = JSON.parse(message.data)
+    } catch (error) {
+      recordConnectionEvent('invalid-proxy-message')
+      return
+    }
+    if (!object || typeof object !== 'object' || Array.isArray(object)) {
+      recordConnectionEvent('invalid-proxy-message')
+      return
+    }
     if (object.$event === 'client-disconnected') {
       suspendJSRuntimeForClientDisconnect()
       return
@@ -197,15 +304,16 @@ const connectToDebuggerProxy = async () => {
         port,
       }) || { enabled: false }
       networkMockConfig = ipcRenderer.sendSync('network-mock-session-config') || networkMockConfig
-      createJSRuntime()
+      createJSRuntime(ws)
       clearLogs()
       selectRNDebuggerWorkerContext(currentWindow)
-      ws.send(JSON.stringify({ replyID: object.id }))
+      sendDebuggerMessage(ws, { replyID: object.id })
     } else if (object.method === '$disconnected') {
       suspendJSRuntimeForClientDisconnect('debugger-disconnected')
     } else {
-      if (!worker) return
-      resumeSuspendedJSRuntime()
+      // Socket OPEN alone does not identify a new native JS runtime. Only
+      // prepareJSRuntime may replace the suspended worker and start a new session.
+      if (!worker || workerSocket !== ws || runtimeSuspended) return
       if (object.method === 'executeApplicationScript') {
         object.networkInspect = networkInspect.isEnabled()
         object.networkMock = networkMockConfig
@@ -218,6 +326,7 @@ const connectToDebuggerProxy = async () => {
         // Clear logs even if no error catched
         clearLogs()
         scriptExecuted = true
+        recordConnectionEvent('bundle-dispatched')
         checkJSLoadCount()
       }
       if (scriptExecuted) {
@@ -232,13 +341,20 @@ const connectToDebuggerProxy = async () => {
     }
   }
 
-  ws.onerror = () => {}
+  ws.onerror = () => {
+    if (isCurrent()) recordConnectionEvent('socket-error', { readyState: ws.readyState })
+  }
   ws.onclose = (e) => {
+    if (!isCurrent()) return
+    recordConnectionEvent('socket-closed', {
+      code: e.code,
+      wasClean: e.wasClean,
+      // Close reasons are server-controlled. Keep known protocol reasons only.
+      reason: knownCloseReasons.has(e.reason) ? e.reason : '[redacted]',
+    })
+    socket = null
     suspendJSRuntimeForClientDisconnect('debugger-websocket-closed')
-    if (e.reason) {
-      console.warn(e.reason)
-    }
-    preconnect(connectToDebuggerProxy, true)
+    preconnect(connectToDebuggerProxy, true, generation)
   }
   return ws
 }
@@ -268,19 +384,36 @@ ipcRenderer.on('network-mock-apply', (event, nextConfig) => {
 })
 
 const setDebuggerLoc = ({ host: packagerHost, port: packagerPort }) => {
-  if (host === packagerHost && port === Number(packagerPort)) return
+  const nextHost = packagerHost || 'localhost'
+  const nextPort = Number(packagerPort || config.port || 8081)
+  if (rendererUnloaded || (host === nextHost && port === nextPort)) return
 
-  host = packagerHost || 'localhost'
-  port = packagerPort || config.port || 8081
-  if (socket) {
-    shutdownJSRuntime()
-    socket.close()
-  } else {
-    // Should ensure cleared timeout if called preconnect twice
-    clearTimeout(preconnectTimeout)
-    preconnect(connectToDebuggerProxy)
-  }
+  connectionGeneration += 1
+  reconnectScheduled = false
+  clearTimeout(preconnectTimeout)
+  preconnectTimeout = null
+  host = nextHost
+  port = nextPort
+  const previousSocket = socket
+  socket = null
+  shutdownJSRuntime()
+  // Invalidate old callbacks before closing; a delayed close must not reconnect.
+  if (previousSocket) previousSocket.close()
+  recordConnectionEvent('target-changed')
+  preconnect(connectToDebuggerProxy)
 }
+
+window.addEventListener('unload', () => {
+  rendererUnloaded = true
+  connectionGeneration += 1
+  reconnectScheduled = false
+  clearTimeout(preconnectTimeout)
+  preconnectTimeout = null
+  const previousSocket = socket
+  socket = null
+  if (previousSocket) previousSocket.close()
+  shutdownJSRuntime()
+})
 
 export default ({ dispatch }) => {
   actions = bindActionCreators(debuggerActions, dispatch)

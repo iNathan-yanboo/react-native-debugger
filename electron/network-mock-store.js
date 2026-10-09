@@ -18,6 +18,7 @@ const normalizeHeaders = (headers) => (
 const normalizeRule = (value = {}, existing = {}) => ({
   id: existing.id || value.id || createId(),
   enabled: value.enabled !== false,
+  group: (typeof value.group === 'string' ? value.group : (existing.group || '')).trim().slice(0, 80),
   url: String(value.url || existing.url || ''),
   urlMatchType: value.urlMatchType === 'regex' ? 'regex' : (existing.urlMatchType || 'exact'),
   method: value.method ? String(value.method).toUpperCase() : (existing.method || ''),
@@ -110,6 +111,36 @@ export const setNetworkMockEnabled = (id, enabled) => {
   return saveNetworkMock({ ...rule, enabled: !!enabled })
 }
 
+const selectedRuleIds = (ids, rules) => {
+  if (!Array.isArray(ids) || !ids.length || ids.some((id) => !isValidId(id))) {
+    throw new Error('Select at least one Mock rule')
+  }
+  const selected = new Set(ids)
+  if (selected.size !== ids.length || rules.filter((rule) => selected.has(rule.id)).length !== selected.size) {
+    throw new Error('Mock rule selection is out of date')
+  }
+  return selected
+}
+
+export const setNetworkMocksEnabled = (ids, enabled) => {
+  const rules = readRules()
+  const selected = selectedRuleIds(ids, rules)
+  const updated = rules.map((rule) => (
+    selected.has(rule.id) ? { ...rule, enabled: !!enabled, updatedAt: Date.now() } : rule
+  ))
+  writeRules(updated)
+  syncWorkers()
+  return updated.filter((rule) => selected.has(rule.id))
+}
+
+export const removeNetworkMocks = (ids) => {
+  const rules = readRules()
+  const selected = selectedRuleIds(ids, rules)
+  writeRules(rules.filter((rule) => !selected.has(rule.id)))
+  syncWorkers()
+  return ids
+}
+
 export const removeNetworkMock = (id) => {
   const rules = readRules()
   const nextRules = rules.filter((rule) => rule.id !== id)
@@ -129,4 +160,6 @@ export const registerNetworkMockIpc = () => {
   ipcMain.handle('network-mock-save', (event, draft) => saveNetworkMock(draft || {}))
   ipcMain.handle('network-mock-set-enabled', (event, id, enabled) => setNetworkMockEnabled(id, enabled))
   ipcMain.handle('network-mock-delete', (event, id) => removeNetworkMock(id))
+  ipcMain.handle('network-mock-batch-set-enabled', (event, ids, enabled) => setNetworkMocksEnabled(ids, enabled))
+  ipcMain.handle('network-mock-batch-delete', (event, ids) => removeNetworkMocks(ids))
 }
